@@ -11,7 +11,7 @@ import javax.swing.table.DefaultTableModel;
 
 public class CustomerDashboard extends JFrame {
 
-    private java.util.List<Database.OrderItem> cartList = new java.util.ArrayList<>();
+    private java.util.List<OrderItem> cartList = new java.util.ArrayList<>();
     private int cartCount = 0;
     private JLabel cartCountLabel;
     private CardLayout cardLayout;
@@ -20,10 +20,10 @@ public class CustomerDashboard extends JFrame {
     private JLabel subtotalLabel, deliveryLabel, totalLabel;
     private double subtotal = 0;
     private int deliveryFee = 30;
-    private Database.Customer currentUser;
+    private Customer currentUser;
     private Runnable refreshOrdersData;
 
-    public CustomerDashboard(Database.Customer user) {
+    public CustomerDashboard(Customer user) {
         this.currentUser = user;
         // Set window properties
         setTitle("Customer Dashboard - SuperMart");
@@ -157,7 +157,8 @@ public class CustomerDashboard extends JFrame {
         grid.removeAll();
         String query = searchQuery.toLowerCase().trim();
 
-        for (Database.Product p : Database.products) {
+        AdminDAO adminDAO = new AdminDAO();
+        for (Product p : adminDAO.getAllProducts()) {
             // Only show products with stock
             if (p.getQuantity() > 0) {
                 // Apply search filter if present
@@ -171,7 +172,7 @@ public class CustomerDashboard extends JFrame {
     }
 
     // Helper method to create individual product cards mapping to Database.Product object
-    private JPanel createProductCard(Database.Product p) {
+    private JPanel createProductCard(Product p) {
         JPanel card = new JPanel();
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1));
@@ -220,7 +221,7 @@ public class CustomerDashboard extends JFrame {
             @Override
             public void actionPerformed(ActionEvent e) {
                 boolean found = false;
-                for (Database.OrderItem item : cartList) {
+                for (OrderItem item : cartList) {
                     if (item.product.getId() == p.getId()) {
                         if (item.qty < p.getQuantity()) {
                             item.qty++;
@@ -233,7 +234,7 @@ public class CustomerDashboard extends JFrame {
                     }
                 }
                 if (!found) {
-                    cartList.add(new Database.OrderItem(p, 1));
+                    cartList.add(new OrderItem(p, 1));
                 }
                 updateCartBadge();
                 renderCartTable();
@@ -353,7 +354,7 @@ public class CustomerDashboard extends JFrame {
             String fakeOrderId = "ORD-" + (int) (Math.random() * 1000000);
             
             StringBuilder summary = new StringBuilder();
-            for(Database.OrderItem item : cartList) {
+            for(OrderItem item : cartList) {
                 summary.append(item.product.getName()).append(" (x").append(item.qty).append("), ");
             }
             if(summary.length() > 2) summary.setLength(summary.length() - 2);
@@ -362,16 +363,20 @@ public class CustomerDashboard extends JFrame {
             String date = java.time.LocalDate.now().toString();
             String delType = sameDayBtn.isSelected() ? "Same Day" : "Next Day";
             
-            Database.Order order = new Database.Order(fakeOrderId, date, status, subtotal + deliveryFee, delType, addressArea.getText().trim(), (String)paymentCombo.getSelectedItem(), summary.toString(), currentUser.getEmail());
-            Database.orders.add(order);
+            Order order = new Order(fakeOrderId, date, status, subtotal + deliveryFee, delType, addressArea.getText().trim(), (String)paymentCombo.getSelectedItem(), summary.toString(), currentUser.getEmail());
+            OrderDAO orderDAO = new OrderDAO();
+            boolean success = orderDAO.placeOrder(order);
 
-            JOptionPane.showMessageDialog(cartOuter, "Order " + fakeOrderId + " placed successfully!", "Order Placed", JOptionPane.INFORMATION_MESSAGE);
-            
-            cartList.clear();
-            addressArea.setText("");
-            updateCartBadge();
-            renderCartTable();
-            cardLayout.show(centerPanel, "HOME");
+            if (success) {
+                JOptionPane.showMessageDialog(cartOuter, "Order " + fakeOrderId + " placed successfully!", "Order Placed", JOptionPane.INFORMATION_MESSAGE);
+                cartList.clear();
+                addressArea.setText("");
+                updateCartBadge();
+                renderCartTable();
+                cardLayout.show(centerPanel, "HOME");
+            } else {
+                JOptionPane.showMessageDialog(cartOuter, "Failed to place order. Database error.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
         });
 
         paymentPanel.add(placeOrderBtn);
@@ -385,7 +390,7 @@ public class CustomerDashboard extends JFrame {
 
     private void updateCartBadge() {
         cartCount = 0;
-        for(Database.OrderItem item : cartList) {
+        for(OrderItem item : cartList) {
             cartCount += item.qty;
         }
         cartCountLabel.setText("(" + cartCount + ")");
@@ -395,7 +400,7 @@ public class CustomerDashboard extends JFrame {
         if(cartTableModel == null) return;
         cartTableModel.setRowCount(0);
         subtotal = 0;
-        for (Database.OrderItem item : cartList) {
+        for (OrderItem item : cartList) {
             double itemTotal = item.product.getPrice() * item.qty;
             subtotal += itemTotal;
             cartTableModel.addRow(new Object[] { 
@@ -443,7 +448,7 @@ public class CustomerDashboard extends JFrame {
             panel = new QtyPanel();
             panel.minusBtn.addActionListener(e -> {
                 if (currentRow >= 0 && currentRow < cartList.size()) {
-                    Database.OrderItem item = cartList.get(currentRow);
+                    OrderItem item = cartList.get(currentRow);
                     if (item.qty > 1) {
                         item.qty--;
                         fireEditingStopped();
@@ -458,7 +463,7 @@ public class CustomerDashboard extends JFrame {
             });
             panel.plusBtn.addActionListener(e -> {
                 if (currentRow >= 0 && currentRow < cartList.size()) {
-                    Database.OrderItem item = cartList.get(currentRow);
+                    OrderItem item = cartList.get(currentRow);
                     if (item.qty < item.product.getQuantity()) {
                         item.qty++;
                         fireEditingStopped();
@@ -550,10 +555,10 @@ public class CustomerDashboard extends JFrame {
 
         refreshOrdersData = () -> {
             ordersModel.setRowCount(0);
-            for(Database.Order o : Database.orders) {
-                if(o.getCustomerEmail() != null && o.getCustomerEmail().equals(currentUser.getEmail())) {
-                    ordersModel.addRow(new Object[]{ o.getOrderId(), o.getDate(), o.getStatus(), "₹" + String.format("%.2f", o.getTotal()), o.getDeliveryType() });
-                }
+            OrderDAO orderDAO = new OrderDAO();
+            java.util.List<Order> orders = orderDAO.getOrdersByCustomer(currentUser.getEmail());
+            for(Order o : orders) {
+                ordersModel.addRow(new Object[]{ o.getOrderId(), o.getDate(), o.getStatus(), "₹" + String.format("%.2f", o.getTotal()), o.getDeliveryType() });
             }
         };
         refreshOrdersData.run();
@@ -566,8 +571,10 @@ public class CustomerDashboard extends JFrame {
                 if (e.getClickCount() == 2 && ordersTable.getSelectedRow() != -1) {
                     int row = ordersTable.convertRowIndexToModel(ordersTable.getSelectedRow());
                     String targetId = ordersModel.getValueAt(row, 0).toString();
-                    Database.Order targetOrder = null;
-                    for(Database.Order o : Database.orders) {
+                    
+                    OrderDAO orderDAO = new OrderDAO();
+                    Order targetOrder = null;
+                    for(Order o : orderDAO.getOrdersByCustomer(currentUser.getEmail())) {
                         if(o.getOrderId().equals(targetId)) {
                             targetOrder = o;
                             break;
@@ -584,7 +591,7 @@ public class CustomerDashboard extends JFrame {
         return ordersOuter;
     }
 
-    private void showOrderDetailsDialog(Database.Order order) {
+    private void showOrderDetailsDialog(Order order) {
         JDialog dialog = new JDialog(this, "Order Details - " + order.getOrderId(), true);
         dialog.setLayout(new BoxLayout(dialog.getContentPane(), BoxLayout.Y_AXIS));
         dialog.setSize(400, 300);

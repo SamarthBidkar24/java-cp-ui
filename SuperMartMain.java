@@ -5,11 +5,6 @@ import java.util.regex.Pattern;
 public class SuperMartMain extends JFrame {
 
     public SuperMartMain() {
-        // Pre-populate some dummy accounts
-        if (Database.customers.isEmpty()) {
-            Database.customers.add(new Database.Customer("Admin", "admin@supermart.com", "0000000000", "admin123"));
-            Database.customers.add(new Database.Customer("Test Customer", "customer@test.com", "1234567890", "pass123"));
-        }
         setTitle("SuperMart Online Ordering System");
         setSize(800, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -81,7 +76,6 @@ public class SuperMartMain extends JFrame {
         loginPanel.add(roleBtnOuter, gbc);
 
         // --- Action Listeners ---
-        // Helper to validate and return if success
         validateAndProceed(customerLoginBtn, emailField, pwdField, false);
         validateAndProceed(adminLoginBtn, emailField, pwdField, true);
 
@@ -104,24 +98,26 @@ public class SuperMartMain extends JFrame {
                 return;
             }
 
-            Database.Customer matchedCustomer = null;
-            for(Database.Customer c : Database.customers) {
-                if(c.getEmail().equalsIgnoreCase(email)) {
-                    matchedCustomer = c;
-                    break;
-                }
-            }
-
-            if (matchedCustomer != null && matchedCustomer.getPassword().equals(pwd)) {
-                // Success
-                if (isAdmin) {
+            if (isAdmin) {
+                AdminDAO adminDAO = new AdminDAO();
+                Admin matchedAdmin = adminDAO.loginAdmin(email, pwd);
+                if (matchedAdmin != null) {
                     new AdminDashboard(email).setVisible(true);
+                    this.dispose();
                 } else {
-                    new CustomerDashboard(matchedCustomer).setVisible(true);
+                    JOptionPane.showMessageDialog(this, "Invalid admin credentials.", "Login Error",
+                            JOptionPane.ERROR_MESSAGE);
                 }
             } else {
-                JOptionPane.showMessageDialog(this, "Invalid credentials. Please try again or register.", "Login Error",
-                        JOptionPane.ERROR_MESSAGE);
+                CustomerDAO customerDAO = new CustomerDAO();
+                Customer matchedCustomer = customerDAO.login(email, pwd);
+                if (matchedCustomer != null) {
+                    new CustomerDashboard(matchedCustomer).setVisible(true);
+                    this.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Invalid customer credentials.", "Login Error",
+                            JOptionPane.ERROR_MESSAGE);
+                }
             }
         });
     }
@@ -135,65 +131,51 @@ public class SuperMartMain extends JFrame {
         Font labelFont = new Font("SansSerif", Font.PLAIN, 14);
         Font fieldFont = new Font("SansSerif", Font.PLAIN, 14);
 
-        // Full Name
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        JLabel nameLbl = new JLabel("Full Name:");
-        nameLbl.setFont(labelFont);
-        registerPanel.add(nameLbl, gbc);
+        // Name
+        gbc.gridx = 0; gbc.gridy = 0;
+        registerPanel.add(new JLabel("Full Name:"), gbc);
         gbc.gridx = 1;
         JTextField nameField = new JTextField(20);
-        nameField.setFont(fieldFont);
         registerPanel.add(nameField, gbc);
 
         // Email
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        JLabel emailLbl = new JLabel("Email:");
-        emailLbl.setFont(labelFont);
-        registerPanel.add(emailLbl, gbc);
+        gbc.gridx = 0; gbc.gridy = 1;
+        registerPanel.add(new JLabel("Email:"), gbc);
         gbc.gridx = 1;
         JTextField emailField = new JTextField(20);
-        emailField.setFont(fieldFont);
         registerPanel.add(emailField, gbc);
 
         // Phone
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        JLabel phoneLbl = new JLabel("Phone:");
-        phoneLbl.setFont(labelFont);
-        registerPanel.add(phoneLbl, gbc);
+        gbc.gridx = 0; gbc.gridy = 2;
+        registerPanel.add(new JLabel("Phone:"), gbc);
         gbc.gridx = 1;
         JTextField phoneField = new JTextField(20);
-        phoneField.setFont(fieldFont);
         registerPanel.add(phoneField, gbc);
 
         // Password
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        JLabel pwdLbl = new JLabel("Password:");
-        pwdLbl.setFont(labelFont);
-        registerPanel.add(pwdLbl, gbc);
+        gbc.gridx = 0; gbc.gridy = 3;
+        registerPanel.add(new JLabel("Password:"), gbc);
         gbc.gridx = 1;
         JPasswordField pwdField = new JPasswordField(20);
-        pwdField.setFont(fieldFont);
         registerPanel.add(pwdField, gbc);
 
-        // Confirm Password
-        gbc.gridx = 0;
-        gbc.gridy = 4;
-        JLabel confirmPwdLbl = new JLabel("Confirm Password:");
-        confirmPwdLbl.setFont(labelFont);
-        registerPanel.add(confirmPwdLbl, gbc);
+        // Confirm
+        gbc.gridx = 0; gbc.gridy = 4;
+        registerPanel.add(new JLabel("Confirm Password:"), gbc);
         gbc.gridx = 1;
         JPasswordField confirmPwdField = new JPasswordField(20);
-        confirmPwdField.setFont(fieldFont);
         registerPanel.add(confirmPwdField, gbc);
 
+        // Role
+        gbc.gridx = 0; gbc.gridy = 5;
+        registerPanel.add(new JLabel("Register As:"), gbc);
+        gbc.gridx = 1;
+        String[] roles = {"Customer", "Admin"};
+        JComboBox<String> roleCombo = new JComboBox<>(roles);
+        registerPanel.add(roleCombo, gbc);
+
         // Register Button
-        gbc.gridx = 0;
-        gbc.gridy = 5;
-        gbc.gridwidth = 2;
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2;
         JButton registerBtn = new JButton("Register");
         registerBtn.setFont(new Font("SansSerif", Font.BOLD, 16));
         registerPanel.add(registerBtn, gbc);
@@ -204,57 +186,51 @@ public class SuperMartMain extends JFrame {
             String phone = phoneField.getText().trim();
             String pwd = new String(pwdField.getPassword());
             String confirmPwd = new String(confirmPwdField.getPassword());
+            String selectedRole = (String) roleCombo.getSelectedItem();
 
-            // 1. Required fields
             if (name.isEmpty() || email.isEmpty() || phone.isEmpty() || pwd.isEmpty() || confirmPwd.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "All fields are required.", "Registration Error",
-                        JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "All fields are required.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-
-            // 2. Email format validation
             if (!isValidEmail(email)) {
-                JOptionPane.showMessageDialog(this, "Invalid email format.", "Registration Error",
-                        JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Invalid email format.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-
-            // 3. Password match
             if (!pwd.equals(confirmPwd)) {
-                JOptionPane.showMessageDialog(this, "Passwords do not match.", "Registration Error",
-                        JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Passwords do not match.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
-            boolean exists = false;
-            for(Database.Customer c : Database.customers) {
-                if(c.getEmail().equalsIgnoreCase(email)) {
-                    exists = true;
-                    break;
+            boolean registered = false;
+            if ("Admin".equals(selectedRole)) {
+                AdminDAO adminDAO = new AdminDAO();
+                if (adminDAO.emailExists(email)) {
+                    JOptionPane.showMessageDialog(this, "Admin email already exists.", "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
                 }
+                registered = adminDAO.registerAdmin(name, email, phone, pwd);
+            } else {
+                CustomerDAO customerDAO = new CustomerDAO();
+                if (customerDAO.emailExists(email)) {
+                    JOptionPane.showMessageDialog(this, "Customer email already exists.", "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                registered = customerDAO.registerCustomer(name, email, phone, pwd);
             }
 
-            if (exists) {
-                JOptionPane.showMessageDialog(this, "An account with this email already exists.", "Registration Error",
-                        JOptionPane.ERROR_MESSAGE);
-                return;
+            if (registered) {
+                JOptionPane.showMessageDialog(this, "Registration successful!");
+                nameField.setText("");
+                emailField.setText("");
+                phoneField.setText("");
+                pwdField.setText("");
+                confirmPwdField.setText("");
+                roleCombo.setSelectedIndex(0);
+            } else {
+                JOptionPane.showMessageDialog(this, "Registration failed.", "Error", JOptionPane.ERROR_MESSAGE);
             }
-
-            // Success - add to map
-            Database.customers.add(new Database.Customer(name, email, phone, pwd));
-
-            // Clear fields
-            nameField.setText("");
-            emailField.setText("");
-            phoneField.setText("");
-            pwdField.setText("");
-            confirmPwdField.setText("");
-
-            JOptionPane.showMessageDialog(this, "Registration successful! You may now login.", "Success",
-                    JOptionPane.INFORMATION_MESSAGE);
         });
 
-        // Add padding around the panel
         JPanel outerPanel = new JPanel();
         outerPanel.add(registerPanel);
         return outerPanel;

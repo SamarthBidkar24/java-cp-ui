@@ -46,3 +46,11 @@ java SuperMartMain
 * Install the baseline **Extension Pack for Java**. 
 * Access your project directory. 
 * Locate `SuperMartMain.java` and click the floating `Run` button that appears above the `main` argument string.
+
+---
+
+### Recent Updates
+- Integrated a new backend persistence layer for better data management.
+- Improved the Admin Dashboard analytics for real-time reporting.
+- Refactored core logic in `SuperMartMain.java` and `Admin.java` for better performance.
+

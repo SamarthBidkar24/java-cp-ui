@@ -228,8 +228,10 @@ public class AdminDashboard extends JFrame {
                     deleteItem.addActionListener(event -> {
                         int modelRow = inventoryTable.convertRowIndexToModel(rowindex);
                         int id = (int) tableModel.getValueAt(modelRow, 0);
-                        Database.products.removeIf(p -> p.getId() == id);
-                        refreshInventoryTable(tableModel);
+                        AdminDAO adminDAO = new AdminDAO();
+                        if (adminDAO.deleteProduct(id)) {
+                            refreshInventoryTable(tableModel);
+                        }
                     });
 
                     popup.add(editItem);
@@ -259,10 +261,11 @@ public class AdminDashboard extends JFrame {
                         "Delete the selected product(s)?", "Confirm Delete",
                         JOptionPane.YES_NO_OPTION);
                 if (confirm == JOptionPane.YES_OPTION) {
+                    AdminDAO adminDAO = new AdminDAO();
                     for (int i = selectedRows.length - 1; i >= 0; i--) {
                         int modelRow = inventoryTable.convertRowIndexToModel(selectedRows[i]);
                         int id = (int) tableModel.getValueAt(modelRow, 0);
-                        Database.products.removeIf(p -> p.getId() == id);
+                        adminDAO.deleteProduct(id);
                     }
                     refreshInventoryTable(tableModel);
                 }
@@ -278,7 +281,8 @@ public class AdminDashboard extends JFrame {
 
     private void refreshInventoryTable(DefaultTableModel tableModel) {
         tableModel.setRowCount(0); // clear
-        for (Database.Product p : Database.products) {
+        AdminDAO adminDAO = new AdminDAO();
+        for (Product p : adminDAO.getAllProducts()) {
             ImageIcon icon = null;
             if (p.getImagePath() != null && !p.getImagePath().isEmpty()) {
                 ImageIcon originalIcon = new ImageIcon(p.getImagePath());
@@ -373,16 +377,14 @@ public class AdminDashboard extends JFrame {
                 int qty = Integer.parseInt(quantityField.getText().trim());
                 String cat = (String) categoryCombo.getSelectedItem();
 
-                int maxId = 0;
-                for (Database.Product p : Database.products) {
-                    if (p.getId() > maxId)
-                        maxId = p.getId();
+                AdminDAO adminDAO = new AdminDAO();
+                boolean success = adminDAO.addProduct(name, qty, price, cat, finalImagePath[0]);
+                if (success) {
+                    refreshInventoryTable(tableModel);
+                    dialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "Failed to add product.", "Database Error", JOptionPane.ERROR_MESSAGE);
                 }
-
-                Database.Product newProd = new Database.Product(maxId + 1, name, qty, price, cat, finalImagePath[0]);
-                Database.products.add(newProd);
-                refreshInventoryTable(tableModel);
-                dialog.dispose();
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(dialog, "Invalid number format for price or quantity.", "Input Error",
                         JOptionPane.ERROR_MESSAGE);
@@ -394,8 +396,9 @@ public class AdminDashboard extends JFrame {
 
     private void showEditProductDialog(DefaultTableModel tableModel, int modelRow) {
         int targetId = (int) tableModel.getValueAt(modelRow, 0);
-        Database.Product targetProduct = null;
-        for (Database.Product p : Database.products) {
+        AdminDAO adminDAO = new AdminDAO();
+        Product targetProduct = null;
+        for (Product p : adminDAO.getAllProducts()) {
             if (p.getId() == targetId) {
                 targetProduct = p;
                 break;
@@ -484,17 +487,24 @@ public class AdminDashboard extends JFrame {
 
         cancelBtn.addActionListener(e -> dialog.dispose());
 
-        final Database.Product toUpdate = targetProduct;
+        final Product toUpdate = targetProduct;
         saveBtn.addActionListener(e -> {
             try {
-                toUpdate.setName(nameField.getText().trim());
-                toUpdate.setPrice(Double.parseDouble(priceField.getText().trim()));
-                toUpdate.setQuantity(Integer.parseInt(quantityField.getText().trim()));
-                toUpdate.setCategory((String) categoryCombo.getSelectedItem());
-                toUpdate.setImagePath(editImagePath[0]);
+                String name = nameField.getText().trim();
+                double price = Double.parseDouble(priceField.getText().trim());
+                int qty = Integer.parseInt(quantityField.getText().trim());
+                String cat = (String) categoryCombo.getSelectedItem();
+                String img = editImagePath[0];
 
-                refreshInventoryTable(tableModel);
-                dialog.dispose();
+                AdminDAO dao = new AdminDAO();
+                boolean success = dao.updateProduct(toUpdate.getId(), name, qty, price, cat, img);
+
+                if (success) {
+                    refreshInventoryTable(tableModel);
+                    dialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "Failed to update product.", "Error", JOptionPane.ERROR_MESSAGE);
+                }
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(dialog, "Invalid number format for price or quantity.", "Input Error",
                         JOptionPane.ERROR_MESSAGE);
@@ -545,7 +555,8 @@ public class AdminDashboard extends JFrame {
             int sameDay = 0;
             int nextDay = 0;
 
-            for(Database.Order o : Database.orders) {
+            AdminDAO adminDAO = new AdminDAO();
+            for(Order o : adminDAO.getAllOrders()) {
                 if(o.getDate().equals(targetDate)) {
                     ordersCount++;
                     revenue += o.getTotal();
@@ -624,7 +635,8 @@ public class AdminDashboard extends JFrame {
 
         Runnable refreshOrders = () -> {
             orderModel.setRowCount(0);
-            for(Database.Order o : Database.orders) {
+            AdminDAO adminDAO = new AdminDAO();
+            for(Order o : adminDAO.getAllOrders()) {
                 if (o.getDeliveryType() != null && o.getDeliveryType().equals(deliveryTypeFilter)) {
                     orderModel.addRow(new Object[] {
                             o.getOrderId(),
@@ -653,14 +665,13 @@ public class AdminDashboard extends JFrame {
                 String newStatus = orderModel.getValueAt(modelRow, 6).toString();
                 
                 // Write into our backend DB
-                for(Database.Order o : Database.orders) {
-                    if (o.getOrderId().equals(orderId)) {
-                        o.setStatus(newStatus);
-                        break;
-                    }
+                AdminDAO adminDAO = new AdminDAO();
+                if (adminDAO.updateOrderStatus(orderId, newStatus)) {
+                    refreshOrders.run();
+                    JOptionPane.showMessageDialog(orderPanel, "Status updated to " + newStatus + " for Order: " + orderId);
+                } else {
+                    JOptionPane.showMessageDialog(orderPanel, "Status update failed.");
                 }
-                refreshOrders.run();
-                JOptionPane.showMessageDialog(orderPanel, "Status updated to " + newStatus + " for Order: " + orderId);
             } else {
                 JOptionPane.showMessageDialog(orderPanel, "Please select an order to update data.");
             }
@@ -692,8 +703,9 @@ public class AdminDashboard extends JFrame {
                 if (e.getClickCount() == 2 && orderTable.getSelectedRow() != -1) {
                     int modelRow = orderTable.convertRowIndexToModel(orderTable.getSelectedRow());
                     String targetId = orderModel.getValueAt(modelRow, 0).toString();
-                    Database.Order targetOrder = null;
-                    for(Database.Order o : Database.orders) {
+                    Order targetOrder = null;
+                    AdminDAO adminDAO = new AdminDAO();
+                    for(Order o : adminDAO.getAllOrders()) {
                         if (o.getOrderId().equals(targetId)) {
                             targetOrder = o;
                             break;
@@ -747,7 +759,8 @@ public class AdminDashboard extends JFrame {
 
         Runnable refreshHook = () -> {
             orderModel.setRowCount(0);
-            for(Database.Order o : Database.orders) {
+            AdminDAO adminDAO = new AdminDAO();
+            for(Order o : adminDAO.getAllOrders()) {
                 orderModel.addRow(new Object[] { o.getOrderId(), o.getDate(), o.getStatus(), "₹" + String.format("%.2f", o.getTotal()), o.getDeliveryType() });
             }
         };
@@ -761,14 +774,13 @@ public class AdminDashboard extends JFrame {
                 String orderId = orderModel.getValueAt(modelRow, 0).toString();
                 String newStatus = (String)updateStatusCombo.getSelectedItem();
                 
-                for(Database.Order o : Database.orders) {
-                    if(o.getOrderId().equals(orderId)) {
-                        o.setStatus(newStatus);
-                        break;
-                    }
+                AdminDAO adminDAO = new AdminDAO();
+                if (adminDAO.updateOrderStatus(orderId, newStatus)) {
+                    refreshHook.run();
+                    JOptionPane.showMessageDialog(AdminDashboard.this, "Order " + orderId + " updated to " + newStatus);
+                } else {
+                    JOptionPane.showMessageDialog(AdminDashboard.this, "Order update failed.");
                 }
-                refreshHook.run();
-                JOptionPane.showMessageDialog(AdminDashboard.this, "Order " + orderId + " updated to " + newStatus);
             } else {
                 JOptionPane.showMessageDialog(orderPanel, "Please select an order to update.");
             }
@@ -781,8 +793,9 @@ public class AdminDashboard extends JFrame {
                 if (e.getClickCount() == 2 && orderTable.getSelectedRow() != -1) {
                     int modelRow = orderTable.convertRowIndexToModel(orderTable.getSelectedRow());
                     String targetId = orderModel.getValueAt(modelRow, 0).toString();
-                    Database.Order targetOrder = null;
-                    for(Database.Order o : Database.orders) {
+                    AdminDAO adminDAO = new AdminDAO();
+                    Order targetOrder = null;
+                    for(Order o : adminDAO.getAllOrders()) {
                         if (o.getOrderId().equals(targetId)) {
                             targetOrder = o;
                             break;
@@ -805,7 +818,7 @@ public class AdminDashboard extends JFrame {
         return orderPanel;
     }
 
-    private void showOrderDetailsDialog(Database.Order order) {
+    private void showOrderDetailsDialog(Order order) {
         JDialog dialog = new JDialog(this, "Admin Order View - " + order.getOrderId(), true);
         dialog.setLayout(new BoxLayout(dialog.getContentPane(), BoxLayout.Y_AXIS));
         dialog.setSize(400, 300);
