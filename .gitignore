@@ -1,0 +1,7 @@
+*.class
+.DS_Store
+.idea/
+.vsc/
+bin/
+out/
+target/

@@ -66,10 +66,7 @@ public class AdminDashboard extends JFrame {
                             cardLayout.show(mainContentPanel, btnName);
                         }
                     } else {
-                        // For under construction panels, let's just make dummy ones on the fly or show
-                        // a message.
-                        // Wait, user asked "Each sidebar button shows respective panel title."
-                        // We can create a generic panel for others dynamically to show the title.
+                        // For under construction panels,make dummy ones on the fly or show
                         JPanel tempPanel = new JPanel(new GridBagLayout());
                         JLabel tempLabel = new JLabel(btnName + " - Under Construction");
                         tempLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
