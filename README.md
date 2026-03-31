@@ -36,6 +36,11 @@ javac *.java
 
 # Boot the Application 
 java SuperMartMain
+
+#Other method is 
+#1)GitClone the project 
+#2)Run the below line in terminal (Make sure SQL server is open )
+java -cp ".;C:\Users\acer\Downloads\mysql-connector-j-9.6.0\mysql-connector-j-9.6.0\mysql-connector-j-9.6.0.jar" SuperMartMain
 ```
 
 #### 2. Intellij IDEA / Eclipse
