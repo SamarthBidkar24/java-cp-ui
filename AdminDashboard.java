@@ -1,875 +1,1010 @@
-import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import javax.swing.table.TableRowSorter;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.stage.Stage;
+import java.util.List;
+import java.util.stream.Collectors;
 
-import java.util.ArrayList;
+/**
+ * AdminDashboard - JavaFX Shell
+ * Migrated from Java Swing.
+ * 
+ * Hierarchy:
+ * Root: BorderPane
+ * - Top: Header with Admin name
+ * - Left: Sidebar (VBox) with buttons
+ * - Center: Content Container (StackPane)
+ * - Bottom: Status bar with stats and refresh
+ */
+public class AdminDashboard extends Application {
 
-public class AdminDashboard extends JFrame {
+    private String adminEmail;
+    private StackPane contentArea;
+    private Label statsLabel;
+    private Stage stage;
+    private Button bellBtn;
+    private java.util.function.Consumer<Notification> notificationListener;
+    private TableView<OrderRoute> routeTable; // Use a field to avoid scope issues
 
-    
-    
-
-    private JLabel mainTitleLabel;
-    private JPanel mainContentPanel;
-    private CardLayout cardLayout;
-
-    private JLabel globalStatsLabel;
+    // Constructors
+    public AdminDashboard() {
+    }
 
     public AdminDashboard(String email) {
-        // Set window properties
-        setTitle("Admin Dashboard - SuperMart");
-        setSize(900, 700);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLocationRelativeTo(null); // Center on screen
-        setLayout(new BorderLayout());
+        this.adminEmail = email;
+    }
 
-        // --- Left Sidebar (West) ---
-        JPanel sidebarPanel = new JPanel();
-        sidebarPanel.setPreferredSize(new Dimension(200, getHeight()));
-        sidebarPanel.setLayout(new BoxLayout(sidebarPanel, BoxLayout.Y_AXIS));
-        sidebarPanel.setBorder(BorderFactory.createEmptyBorder(20, 10, 20, 10));
+    @Override
+    public void start(Stage primaryStage) {
+        this.stage = primaryStage;
+        primaryStage.setTitle("Admin Dashboard - SuperMart");
 
-        // Array of button names for the sidebar
-        String[] sidebarButtons = {
+        BorderPane root = new BorderPane();
+
+        // 1. TOP area: Header
+        HBox header = new HBox();
+        header.getStyleClass().add("admin-header");
+        header.setPadding(new Insets(15, 20, 15, 20));
+        header.setAlignment(Pos.CENTER_LEFT);
+        Label welcome = new Label("Logged in as: " + (adminEmail != null ? adminEmail : "Admin"));
+        welcome.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        
+        bellBtn = NotificationUI.createNotificationBell(Notification.UserType.ADMIN, "admin");
+        
+        header.getChildren().addAll(welcome, new Region(), bellBtn);
+        HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+        
+        root.setTop(header);
+        
+        // Setup Live Notifications
+        setupNotifications();
+
+        // 2. LEFT area: Sidebar
+        VBox sidebar = new VBox(10);
+        sidebar.getStyleClass().add("admin-sidebar");
+        sidebar.setPrefWidth(210);
+        sidebar.setPadding(new Insets(20, 10, 20, 10));
+
+        String[] navButtons = {
                 "Inventory",
-                "Orders Today",
-                "Orders Tomorrow",
+                "Same Day Deliveries",
+                "Next Day Deliveries",
+                "Route Planner",
+                "Delivery Management",
                 "Daily Reports",
-                "Order Status",
                 "Logout"
         };
 
-        // Add buttons to sidebar with spacing
-        for (String btnName : sidebarButtons) {
-            JButton btn = new JButton(btnName);
-            btn.setMaximumSize(new Dimension(180, 40));
-            btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-            // Add action listener to update the main title when clicked
-            btn.addActionListener(new ActionListener() {
-                @Override
-                public void actionPerformed(ActionEvent e) {
-                    if (btnName.equals("Logout")) {
-                        JOptionPane.showMessageDialog(AdminDashboard.this, "Logging out...");
-                        dispose(); // Close dashboard
-                        new SuperMartMain().setVisible(true);
-                    } else if (btnName.equals("Inventory") || btnName.equals("Order Status") || btnName.equals("Orders Today") || btnName.equals("Orders Tomorrow") || btnName.equals("Daily Reports")) {
-                        if (cardLayout != null) {
-                            // On switch, we might want to refresh, but for now just show
-                            cardLayout.show(mainContentPanel, btnName);
-                        }
-                    } else {
-                        // For under construction panels,make dummy ones on the fly or show
-                        JPanel tempPanel = new JPanel(new GridBagLayout());
-                        JLabel tempLabel = new JLabel(btnName + " - Under Construction");
-                        tempLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
-                        tempPanel.add(tempLabel);
-                        mainContentPanel.add(tempPanel, btnName);
-                        cardLayout.show(mainContentPanel, btnName);
-                    }
+        for (String name : navButtons) {
+            Button btn = new Button(name);
+            btn.getStyleClass().add("sidebar-btn");
+            btn.setMaxWidth(Double.MAX_VALUE);
+            btn.setAlignment(Pos.CENTER_LEFT);
+            btn.setOnAction(e -> {
+                if (name.equals("Logout")) {
+                    handleLogout();
+                } else {
+                    switchCenterContent(name);
                 }
             });
-
-            sidebarPanel.add(btn);
-            sidebarPanel.add(Box.createRigidArea(new Dimension(0, 10))); // 10px spacing
+            sidebar.getChildren().add(btn);
         }
+        root.setLeft(sidebar);
 
-        // --- Main Content Area (Center) ---
-        cardLayout = new CardLayout();
-        mainContentPanel = new JPanel();
-        mainContentPanel.setLayout(cardLayout);
+        // 3. CENTER area: Content Container
+        contentArea = new StackPane();
+        contentArea.setPadding(new Insets(25));
+        // Default initial view
+        switchCenterContent("Admin Home");
+        root.setCenter(contentArea);
 
-        // Home Panel
-        JPanel homePanel = new JPanel(new GridBagLayout());
-        JLabel welcomeLabel = new JLabel("Welcome Admin - " + email);
-        welcomeLabel.setFont(new Font("SansSerif", Font.BOLD, 32));
-        homePanel.add(welcomeLabel);
+        // 4. BOTTOM area: Status/Info Bar
+        BorderPane statusBar = new BorderPane();
+        statusBar.getStyleClass().add("admin-status-bar");
+        statusBar.setPadding(new Insets(10, 20, 10, 20));
 
-        mainContentPanel.add(homePanel, "Home");
-        mainContentPanel.add(createInventoryPanel(), "Inventory");
-        mainContentPanel.add(createOrderStatusPanel(), "Order Status");
-        mainContentPanel.add(createOrdersPeriodPanel("Same Day", "Orders Today"), "Orders Today");
-        mainContentPanel.add(createOrdersPeriodPanel("Next Day", "Orders Tomorrow"), "Orders Tomorrow");
-        mainContentPanel.add(createDailyReportsPanel(), "Daily Reports");
+        statsLabel = new Label("Total Orders Today: 0 | Revenue: ₹0");
+        statsLabel.setStyle("-fx-font-weight: bold;");
+        statusBar.setLeft(statsLabel);
 
-        // Start with Home
-        cardLayout.show(mainContentPanel, "Home");
-
-        // --- Bottom Area (South) ---
-        JPanel bottomPanel = new JPanel();
-        bottomPanel.setLayout(new BorderLayout()); // Align left and right
-        bottomPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
-
-        globalStatsLabel = new JLabel("Total Orders Today: 0 | Revenue: ₹0");
-        globalStatsLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
-        bottomPanel.add(globalStatsLabel, BorderLayout.WEST);
-
-        JButton refreshBtn = new JButton("Refresh");
-        refreshBtn.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                JOptionPane.showMessageDialog(AdminDashboard.this, "Data Refreshed.");
-            }
+        Button refreshBtn = new Button("Refresh");
+        refreshBtn.setOnAction(e -> {
+            refreshDashboardStats();
+            new Alert(Alert.AlertType.INFORMATION, "Data Refreshed.").show();
         });
+        statusBar.setRight(refreshBtn);
 
-        bottomPanel.add(refreshBtn, BorderLayout.EAST);
+        refreshDashboardStats(); // Initial load
 
-        // Add components to the frame
-        add(sidebarPanel, BorderLayout.WEST);
-        add(mainContentPanel, BorderLayout.CENTER);
-        add(bottomPanel, BorderLayout.SOUTH);
+        root.setBottom(statusBar);
+
+        Scene scene = new Scene(root, 1000, 700);
+        scene.getStylesheets().add(getClass().getResource("admin_dashboard.css").toExternalForm());
+        stage.setScene(scene);
+        stage.show();
     }
 
-    private JPanel createInventoryPanel() {
-        JPanel inventoryPanel = new JPanel(new BorderLayout());
-
-        mainTitleLabel = new JLabel("Inventory", SwingConstants.CENTER);
-        mainTitleLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
-        mainTitleLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-        inventoryPanel.add(mainTitleLabel, BorderLayout.NORTH);
-
-        // Top Control Panel
-        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-
-        JButton addProductBtn = new JButton("Add Product");
-        JButton deleteSelectedBtn = new JButton("Delete Selected");
-        JButton refreshBtn = new JButton("Refresh");
-        JTextField searchField = new JTextField(15);
-        searchField.setToolTipText("Search Product...");
-
-        controlPanel.add(addProductBtn);
-        controlPanel.add(deleteSelectedBtn);
-        controlPanel.add(refreshBtn);
-        controlPanel.add(new JLabel("Search Product:"));
-        controlPanel.add(searchField);
-
-        // Table Model
-        String[] columns = { "ID", "Name", "Quantity", "Price(₹)", "Category", "Photo" };
-        DefaultTableModel tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-
-            @Override
-            public Class<?> getColumnClass(int columnIndex) {
-                if (columnIndex == 5) {
-                    return ImageIcon.class;
-                }
-                return super.getColumnClass(columnIndex);
+    private void setupNotifications() {
+        notificationListener = n -> {
+            if (n.getUserType() == Notification.UserType.ADMIN) {
+                NotificationUI.updateBellBadge(bellBtn, Notification.UserType.ADMIN, "admin");
+                NotificationUI.showToast(stage, n.getTitle(), n.getMessage());
             }
         };
-
-        JTable inventoryTable = new JTable(tableModel);
-        inventoryTable.setRowHeight(60);
-        inventoryTable.getColumnModel().getColumn(5).setPreferredWidth(60);
-        TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
-        inventoryTable.setRowSorter(sorter);
-
-        // Filter Hook
-        searchField.getDocument().addDocumentListener(new DocumentListener() {
-            private void updateFilter() {
-                String text = searchField.getText();
-                if (text.trim().isEmpty()) {
-                    sorter.setRowFilter(null);
-                } else {
-                    sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text));
-                }
-            }
-
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                updateFilter();
-            }
-
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                updateFilter();
-            }
-
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                updateFilter();
-            }
-        });
-
-        // Context Menu via Right-Click
-        inventoryTable.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e)) {
-                    int r = inventoryTable.rowAtPoint(e.getPoint());
-                    if (r >= 0 && r < inventoryTable.getRowCount()) {
-                        inventoryTable.setRowSelectionInterval(r, r);
-                    } else {
-                        inventoryTable.clearSelection();
-                    }
-
-                    int rowindex = inventoryTable.getSelectedRow();
-                    if (rowindex < 0)
-                        return;
-
-                    JPopupMenu popup = new JPopupMenu();
-                    JMenuItem editItem = new JMenuItem("Edit");
-                    JMenuItem deleteItem = new JMenuItem("Delete");
-
-                    editItem.addActionListener(event -> {
-                        int modelRow = inventoryTable.convertRowIndexToModel(rowindex);
-                        showEditProductDialog(tableModel, modelRow);
-                    });
-
-                    deleteItem.addActionListener(event -> {
-                        int modelRow = inventoryTable.convertRowIndexToModel(rowindex);
-                        int id = (int) tableModel.getValueAt(modelRow, 0);
-                        AdminDAO adminDAO = new AdminDAO();
-                        if (adminDAO.deleteProduct(id)) {
-                            refreshInventoryTable(tableModel);
-                        }
-                    });
-
-                    popup.add(editItem);
-                    popup.add(deleteItem);
-                    popup.show(e.getComponent(), e.getX(), e.getY());
-                }
-            }
-        });
-
-        JScrollPane scrollPane = new JScrollPane(inventoryTable);
-
-        JPanel centerWrapper = new JPanel(new BorderLayout());
-        centerWrapper.add(controlPanel, BorderLayout.NORTH);
-        centerWrapper.add(scrollPane, BorderLayout.CENTER);
-
-        inventoryPanel.add(centerWrapper, BorderLayout.CENTER);
-
-        // Button Actions
-        addProductBtn.addActionListener(e -> showAddProductDialog(tableModel));
-
-        refreshBtn.addActionListener(e -> refreshInventoryTable(tableModel));
-
-        deleteSelectedBtn.addActionListener(e -> {
-            int[] selectedRows = inventoryTable.getSelectedRows();
-            if (selectedRows.length > 0) {
-                int confirm = JOptionPane.showConfirmDialog(inventoryPanel,
-                        "Delete the selected product(s)?", "Confirm Delete",
-                        JOptionPane.YES_NO_OPTION);
-                if (confirm == JOptionPane.YES_OPTION) {
-                    AdminDAO adminDAO = new AdminDAO();
-                    for (int i = selectedRows.length - 1; i >= 0; i--) {
-                        int modelRow = inventoryTable.convertRowIndexToModel(selectedRows[i]);
-                        int id = (int) tableModel.getValueAt(modelRow, 0);
-                        adminDAO.deleteProduct(id);
-                    }
-                    refreshInventoryTable(tableModel);
-                }
-            } else {
-                JOptionPane.showMessageDialog(inventoryPanel, "Please select at least one product.", "No Selection",
-                        JOptionPane.WARNING_MESSAGE);
-            }
-        });
-
-        refreshInventoryTable(tableModel); // Initial data load
-        return inventoryPanel;
+        NotificationService.getInstance().subscribe(notificationListener);
     }
 
-    private void refreshInventoryTable(DefaultTableModel tableModel) {
-        tableModel.setRowCount(0); // clear
-        AdminDAO adminDAO = new AdminDAO();
-        for (Product p : adminDAO.getAllProducts()) {
-            ImageIcon icon = null;
-            if (p.getImagePath() != null && !p.getImagePath().isEmpty()) {
-                ImageIcon originalIcon = new ImageIcon(p.getImagePath());
-                Image scaledImg = originalIcon.getImage().getScaledInstance(50, 50, Image.SCALE_SMOOTH);
-                icon = new ImageIcon(scaledImg);
-            } else {
-                icon = new ImageIcon(); // Empty space if no photo
-            }
-            tableModel.addRow(
-                    new Object[] { p.getId(), p.getName(), p.getQuantity(), p.getPrice(), p.getCategory(), icon });
+    private void switchCenterContent(String panelName) {
+        contentArea.getChildren().clear();
+        if (panelName.equals("Inventory")) {
+            contentArea.getChildren().add(createInventoryPanel());
+        } else if (panelName.equals("Same Day Deliveries")) {
+            contentArea.getChildren().add(createOrdersPanel("Same Day"));
+        } else if (panelName.equals("Next Day Deliveries")) {
+            contentArea.getChildren().add(createOrdersPanel("Next Day"));
+        } else if (panelName.equals("Daily Reports")) {
+            contentArea.getChildren().add(createReportsPanel());
+        } else if (panelName.equals("Route Planner")) {
+            contentArea.getChildren().add(createRoutePlannerPanel());
+        } else if (panelName.equals("Delivery Management")) {
+            contentArea.getChildren().add(createDeliveryManagementPanel());
+        } else {
+            VBox panel = new VBox(20);
+            panel.setAlignment(Pos.TOP_LEFT);
+            Label title = new Label(panelName);
+            title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+            panel.getChildren().add(title);
+            Label placeholder = new Label("Logic for [" + panelName + "] Screen - Panel migration pending.");
+            placeholder.setStyle("-fx-text-fill: #666666; -fx-italic: true;");
+            panel.getChildren().add(placeholder);
+            contentArea.getChildren().add(panel);
         }
     }
 
-    private void showAddProductDialog(DefaultTableModel tableModel) {
-        JDialog dialog = new JDialog(this, "Add Product", true);
-        dialog.setLayout(new GridBagLayout());
-        dialog.setSize(350, 250);
-        dialog.setLocationRelativeTo(this);
+    // --- Inventory Panel Migration (Strict BorderPane implementation) ---
+    private BorderPane createInventoryPanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(20));
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        // 1. TOP area: Header + Controls
+        VBox topArea = new VBox(15);
+        topArea.setPadding(new Insets(0, 0, 15, 0));
 
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        dialog.add(new JLabel("Name:"), gbc);
-        gbc.gridx = 1;
-        JTextField nameField = new JTextField(15);
-        dialog.add(nameField, gbc);
+        Label titleLabel = new Label("Inventory Management");
+        titleLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
 
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        dialog.add(new JLabel("Price(₹):"), gbc);
-        gbc.gridx = 1;
-        JTextField priceField = new JTextField(15);
-        dialog.add(priceField, gbc);
+        HBox controlBox = new HBox(15);
+        controlBox.setAlignment(Pos.CENTER_LEFT);
 
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        dialog.add(new JLabel("Quantity:"), gbc);
-        gbc.gridx = 1;
-        JTextField quantityField = new JTextField(15);
-        dialog.add(quantityField, gbc);
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search by Name...");
+        searchField.setPrefWidth(220);
 
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        dialog.add(new JLabel("Category:"), gbc);
-        gbc.gridx = 1;
-        String[] categories = { "Fruits", "Vegetables", "Dairy", "Other" };
-        JComboBox<String> categoryCombo = new JComboBox<>(categories);
-        dialog.add(categoryCombo, gbc);
+        Button addBtn = new Button("Add Product");
+        Button deleteBtn = new Button("Delete Selected");
+        Button refreshBtn = new Button("Refresh");
 
-        // Photo Upload Component
-        gbc.gridx = 0;
-        gbc.gridy = 4;
-        dialog.add(new JLabel("Photo:"), gbc);
-        gbc.gridx = 1;
-        JPanel photoPanel = new JPanel(new BorderLayout(5, 0));
-        JButton uploadPhotoBtn = new JButton("Upload...");
-        JLabel photoLabel = new JLabel("No file selected");
-        photoPanel.add(uploadPhotoBtn, BorderLayout.WEST);
-        photoPanel.add(photoLabel, BorderLayout.CENTER);
-        dialog.add(photoPanel, gbc);
+        controlBox.getChildren().addAll(new Label("Search:"), searchField, addBtn, deleteBtn, refreshBtn);
+        topArea.getChildren().addAll(titleLabel, controlBox);
+        panel.setTop(topArea);
 
-        final String[] finalImagePath = new String[] { "" };
-        uploadPhotoBtn.addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
-            int result = fileChooser.showOpenDialog(dialog);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                finalImagePath[0] = fileChooser.getSelectedFile().getAbsolutePath();
-                photoLabel.setText(fileChooser.getSelectedFile().getName());
-            }
-        });
+        // 2. CENTER area: TableView
+        TableView<Product> inventoryTable = new TableView<>();
+        inventoryTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton saveBtn = new JButton("Save");
-        JButton cancelBtn = new JButton("Cancel");
-        btnPanel.add(saveBtn);
-        btnPanel.add(cancelBtn);
+        TableColumn<Product, Integer> colId = new TableColumn<>("ID");
+        colId.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("id"));
+        colId.setPrefWidth(50);
 
-        gbc.gridx = 0;
-        gbc.gridy = 5; // Adjusted gridy
-        gbc.gridwidth = 2;
-        dialog.add(btnPanel, gbc);
+        TableColumn<Product, String> colImg = new TableColumn<>("Image");
+        colImg.setPrefWidth(60);
+        colImg.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("imagePath"));
+        colImg.setCellFactory(param -> new TableCell<Product, String>() {
+            private final javafx.scene.image.ImageView imageView = new javafx.scene.image.ImageView();
 
-        cancelBtn.addActionListener(e -> dialog.dispose());
-
-        saveBtn.addActionListener(e -> {
-            try {
-                String name = nameField.getText().trim();
-                double price = Double.parseDouble(priceField.getText().trim());
-                int qty = Integer.parseInt(quantityField.getText().trim());
-                String cat = (String) categoryCombo.getSelectedItem();
-
-                AdminDAO adminDAO = new AdminDAO();
-                boolean success = adminDAO.addProduct(name, qty, price, cat, finalImagePath[0]);
-                if (success) {
-                    refreshInventoryTable(tableModel);
-                    dialog.dispose();
-                } else {
-                    JOptionPane.showMessageDialog(dialog, "Failed to add product.", "Database Error", JOptionPane.ERROR_MESSAGE);
-                }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dialog, "Invalid number format for price or quantity.", "Input Error",
-                        JOptionPane.ERROR_MESSAGE);
-            }
-        });
-
-        dialog.setVisible(true);
-    }
-
-    private void showEditProductDialog(DefaultTableModel tableModel, int modelRow) {
-        int targetId = (int) tableModel.getValueAt(modelRow, 0);
-        AdminDAO adminDAO = new AdminDAO();
-        Product targetProduct = null;
-        for (Product p : adminDAO.getAllProducts()) {
-            if (p.getId() == targetId) {
-                targetProduct = p;
-                break;
-            }
-        }
-        if (targetProduct == null)
-            return;
-
-        JDialog dialog = new JDialog(this, "Edit Product", true);
-        dialog.setLayout(new GridBagLayout());
-        dialog.setSize(350, 250);
-        dialog.setLocationRelativeTo(this);
-
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        dialog.add(new JLabel("Name:"), gbc);
-        gbc.gridx = 1;
-        JTextField nameField = new JTextField(15);
-        nameField.setText(targetProduct.getName());
-        dialog.add(nameField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        dialog.add(new JLabel("Price(₹):"), gbc);
-        gbc.gridx = 1;
-        JTextField priceField = new JTextField(15);
-        priceField.setText(String.valueOf(targetProduct.getPrice()));
-        dialog.add(priceField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        dialog.add(new JLabel("Quantity:"), gbc);
-        gbc.gridx = 1;
-        JTextField quantityField = new JTextField(15);
-        quantityField.setText(String.valueOf(targetProduct.getQuantity()));
-        dialog.add(quantityField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        dialog.add(new JLabel("Category:"), gbc);
-        gbc.gridx = 1;
-        String[] categories = { "Fruits", "Vegetables", "Dairy", "Other" };
-        JComboBox<String> categoryCombo = new JComboBox<>(categories);
-        categoryCombo.setSelectedItem(targetProduct.getCategory());
-        dialog.add(categoryCombo, gbc);
-
-        // Photo Upload Component for Edit
-        gbc.gridx = 0;
-        gbc.gridy = 4;
-        dialog.add(new JLabel("Photo:"), gbc);
-        gbc.gridx = 1;
-        JPanel photoPanel = new JPanel(new BorderLayout(5, 0));
-        JButton uploadPhotoBtn = new JButton("Update...");
-        JLabel photoLabel = new JLabel((targetProduct.getImagePath() == null || targetProduct.getImagePath().isEmpty())
-                ? "No file selected"
-                : new java.io.File(targetProduct.getImagePath()).getName());
-        photoPanel.add(uploadPhotoBtn, BorderLayout.WEST);
-        photoPanel.add(photoLabel, BorderLayout.CENTER);
-        dialog.add(photoPanel, gbc);
-
-        final String[] editImagePath = new String[] {
-                targetProduct.getImagePath() != null ? targetProduct.getImagePath() : "" };
-        uploadPhotoBtn.addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
-            int result = fileChooser.showOpenDialog(dialog);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                editImagePath[0] = fileChooser.getSelectedFile().getAbsolutePath();
-                photoLabel.setText(fileChooser.getSelectedFile().getName());
-            }
-        });
-
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton saveBtn = new JButton("Save");
-        JButton cancelBtn = new JButton("Cancel");
-        btnPanel.add(saveBtn);
-        btnPanel.add(cancelBtn);
-
-        gbc.gridx = 0;
-        gbc.gridy = 5; // Adjusted gridy
-        gbc.gridwidth = 2;
-        dialog.add(btnPanel, gbc);
-
-        cancelBtn.addActionListener(e -> dialog.dispose());
-
-        final Product toUpdate = targetProduct;
-        saveBtn.addActionListener(e -> {
-            try {
-                String name = nameField.getText().trim();
-                double price = Double.parseDouble(priceField.getText().trim());
-                int qty = Integer.parseInt(quantityField.getText().trim());
-                String cat = (String) categoryCombo.getSelectedItem();
-                String img = editImagePath[0];
-
-                AdminDAO dao = new AdminDAO();
-                boolean success = dao.updateProduct(toUpdate.getId(), name, qty, price, cat, img);
-
-                if (success) {
-                    refreshInventoryTable(tableModel);
-                    dialog.dispose();
-                } else {
-                    JOptionPane.showMessageDialog(dialog, "Failed to update product.", "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dialog, "Invalid number format for price or quantity.", "Input Error",
-                        JOptionPane.ERROR_MESSAGE);
-            }
-        });
-
-        dialog.setVisible(true);
-    }
-
-    private JPanel createDailyReportsPanel() {
-        JPanel reportPanel = new JPanel(new BorderLayout());
-
-        JLabel titleLabel = new JLabel("Daily Reports", SwingConstants.CENTER);
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
-        titleLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-        reportPanel.add(titleLabel, BorderLayout.NORTH);
-
-        JPanel centerSplit = new JPanel(new GridLayout(1, 2, 20, 0));
-        centerSplit.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
-
-        // LEFT: Report Generator
-        JPanel leftPanel = new JPanel(new BorderLayout());
-        leftPanel.setBorder(BorderFactory.createTitledBorder("Orders Summary"));
-
-        JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        inputPanel.add(new JLabel("Date (yyyy-MM-dd): "));
-        JTextField dateField = new JTextField(10);
-        dateField.setText(java.time.LocalDate.now().toString());
-        JButton generateBtn = new JButton("Generate Report");
-        inputPanel.add(dateField);
-        inputPanel.add(generateBtn);
-
-        String[] columns = { "Total Orders", "Total Revenue", "Same Day", "Next Day" };
-        DefaultTableModel reportModel = new DefaultTableModel(columns, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) { return false; }
-        };
-        JTable reportTable = new JTable(reportModel);
-        reportTable.setRowHeight(40);
-        
-        leftPanel.add(inputPanel, BorderLayout.NORTH);
-        leftPanel.add(new JScrollPane(reportTable), BorderLayout.CENTER);
-
-        generateBtn.addActionListener(e -> {
-            String targetDate = dateField.getText().trim();
-            int ordersCount = 0;
-            double revenue = 0;
-            int sameDay = 0;
-            int nextDay = 0;
-
-            AdminDAO adminDAO = new AdminDAO();
-            for(Order o : adminDAO.getAllOrders()) {
-                if(o.getDate().equals(targetDate)) {
-                    ordersCount++;
-                    revenue += o.getTotal();
-                    if("Same Day".equals(o.getDeliveryType())) sameDay++;
-                    if("Next Day".equals(o.getDeliveryType())) nextDay++;
+            protected void updateItem(String path, boolean empty) {
+                super.updateItem(path, empty);
+                if (empty || path == null || path.trim().isEmpty()) {
+                    setGraphic(null);
+                } else {
+                    try {
+                        javafx.scene.image.Image img = new javafx.scene.image.Image("file:" + path, 40, 40, true, true);
+                        imageView.setImage(img);
+                        setGraphic(imageView);
+                    } catch (Exception e) {
+                        setGraphic(null); // Fallback to no image
+                    }
                 }
             }
+        });
 
-            reportModel.setRowCount(0);
-            reportModel.addRow(new Object[]{
-                ordersCount,
-                "₹" + String.format("%.2f", revenue),
-                sameDay,
-                nextDay
+        TableColumn<Product, String> colName = new TableColumn<>("Name");
+        colName.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("name"));
+
+        TableColumn<Product, Integer> colQty = new TableColumn<>("Quantity");
+        colQty.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("quantity"));
+
+        TableColumn<Product, Double> colPrice = new TableColumn<>("Price(₹)");
+        colPrice.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("price"));
+
+        TableColumn<Product, String> colCat = new TableColumn<>("Category");
+        colCat.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("category"));
+
+        inventoryTable.getColumns().addAll(colId, colImg, colName, colQty, colPrice, colCat);
+        inventoryTable.setFixedCellSize(50);
+        panel.setCenter(inventoryTable);
+
+        // Logic & Filtering
+        ProductDAO dao = new ProductDAO();
+        javafx.collections.ObservableList<Product> masterData = javafx.collections.FXCollections
+                .observableArrayList(dao.getAllProducts());
+        javafx.collections.transformation.FilteredList<Product> filteredData = new javafx.collections.transformation.FilteredList<>(
+                masterData, p -> true);
+
+        searchField.textProperty().addListener((observable, oldValue, newValue) -> {
+            filteredData.setPredicate(product -> {
+                if (newValue == null || newValue.isEmpty())
+                    return true;
+                return product.getName().toLowerCase().contains(newValue.toLowerCase());
             });
         });
-        
-        // Mock a click to load default date
-        generateBtn.doClick();
 
-        // RIGHT: Top Products
-        JPanel rightPanel = new JPanel(new BorderLayout());
-        rightPanel.setBorder(BorderFactory.createTitledBorder("Top 5 Products Sold"));
-        DefaultListModel<String> topListModel = new DefaultListModel<>();
-        topListModel.addElement("1. Apples (Fuji) - 120 units");
-        topListModel.addElement("2. Milk (1L) - 85 units");
-        topListModel.addElement("3. Bread (Whole Wheat) - 64 units");
-        topListModel.addElement("4. Fresh Eggs (Dozen) - 50 units");
-        topListModel.addElement("5. Orange Juice - 30 units");
-        
-        JList<String> topProductsList = new JList<>(topListModel);
-        topProductsList.setFont(new Font("SansSerif", Font.PLAIN, 16));
-        rightPanel.add(new JScrollPane(topProductsList), BorderLayout.CENTER);
+        inventoryTable.setItems(filteredData);
 
-        centerSplit.add(leftPanel);
-        centerSplit.add(rightPanel);
+        // Actions
+        addBtn.setOnAction(e -> showAddProductDialog(inventoryTable, masterData));
 
-        reportPanel.add(centerSplit, BorderLayout.CENTER);
+        deleteBtn.setOnAction(e -> {
+            Product selected = inventoryTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                if (dao.deleteProduct(selected.getId())) {
+                    masterData.setAll(dao.getAllProducts());
+                }
+            }
+        });
 
-        return reportPanel;
+        refreshBtn.setOnAction(e -> {
+            masterData.setAll(dao.getAllProducts());
+            new Alert(Alert.AlertType.INFORMATION, "Inventory Data Refreshed.").show();
+        });
+
+        return panel;
     }
 
-    private JPanel createOrdersPeriodPanel(String deliveryTypeFilter, String title) {
-        JPanel orderPanel = new JPanel(new BorderLayout());
+    private void showAddProductDialog(TableView<Product> table, javafx.collections.ObservableList<Product> dataList) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Add Product");
+        dialog.setHeaderText("Add New Inventory Item");
 
-        JLabel titleLabel = new JLabel(title, SwingConstants.CENTER);
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
-        titleLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-        orderPanel.add(titleLabel, BorderLayout.NORTH);
+        ButtonType saveButton = new ButtonType("Add Product", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButton, ButtonType.CANCEL);
 
-        // Top Control Panel
-        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton updateStatusBtn = new JButton("Update Status");
-        JButton notifyBtn = new JButton("Notify Customer");
-        JButton refreshBtn = new JButton("Refresh");
+        GridPane grid = new GridPane();
+        grid.setHgap(15);
+        grid.setVgap(15);
+        grid.setPadding(new Insets(20));
 
-        controlPanel.add(refreshBtn);
-        controlPanel.add(updateStatusBtn);
-        controlPanel.add(notifyBtn);
+        TextField nameIn = new TextField();
+        TextField priceIn = new TextField();
+        TextField qtyIn = new TextField();
+        ComboBox<String> catIn = new ComboBox<>(
+                javafx.collections.FXCollections.observableArrayList("Fruits", "Vegetables", "Dairy", "Other"));
+        catIn.getSelectionModel().selectFirst();
 
-        String[] columns = { "Order ID", "Customer Email", "Time", "Address", "Total(₹)", "Status", "Update Status" };
-        DefaultTableModel orderModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return column == 6; // Only "Update Status" combobox is editable
-            }
-        };
+        TextField pathIn = new TextField();
+        pathIn.setEditable(false);
+        pathIn.setPromptText("No image selected");
+        Button browseBtn = new Button("Browse...");
 
-        JTable orderTable = new JTable(orderModel);
-        orderTable.setRowHeight(30);
+        grid.add(new Label("Name:"), 0, 0);
+        grid.add(nameIn, 1, 0);
+        grid.add(new Label("Price(₹):"), 0, 1);
+        grid.add(priceIn, 1, 1);
+        grid.add(new Label("Quantity:"), 0, 2);
+        grid.add(qtyIn, 1, 2);
+        grid.add(new Label("Category:"), 0, 3);
+        grid.add(catIn, 1, 3);
+        grid.add(new Label("Image Path:"), 0, 4);
+        HBox pathBox = new HBox(5, pathIn, browseBtn);
+        grid.add(pathBox, 1, 4);
 
-        // Combo Box for Status Column
-        String[] statusOptions = { "Pending", "Processing", "Delivered" };
-        JComboBox<String> statusCombo = new JComboBox<>(statusOptions);
-        orderTable.getColumnModel().getColumn(6).setCellEditor(new DefaultCellEditor(statusCombo));
-
-        Runnable refreshOrders = () -> {
-            orderModel.setRowCount(0);
-            AdminDAO adminDAO = new AdminDAO();
-            for(Order o : adminDAO.getAllOrders()) {
-                if (o.getDeliveryType() != null && o.getDeliveryType().equals(deliveryTypeFilter)) {
-                    orderModel.addRow(new Object[] {
-                            o.getOrderId(),
-                            (o.getCustomerEmail() != null ? o.getCustomerEmail() : "N/A"),
-                            o.getDate(),
-                            o.getAddress().replace("\n", " "), // Flatten the address to show clearly as a row
-                            "₹" + String.format("%.2f", o.getTotal()),
-                            o.getStatus(),
-                            o.getStatus() // Sets default combo box option implicitly visually
-                    });
-                }
-            }
-        };
-
-        refreshBtn.addActionListener(e -> refreshOrders.run());
-
-        // Update Button Logic
-        updateStatusBtn.addActionListener(e -> {
-            if (orderTable.isEditing()) {
-                orderTable.getCellEditor().stopCellEditing(); // Commit combo box first
-            }
-            int selectedRow = orderTable.getSelectedRow();
-            if (selectedRow != -1) {
-                int modelRow = orderTable.convertRowIndexToModel(selectedRow);
-                String orderId = orderModel.getValueAt(modelRow, 0).toString();
-                String newStatus = orderModel.getValueAt(modelRow, 6).toString();
-                
-                // Write into our backend DB
-                AdminDAO adminDAO = new AdminDAO();
-                if (adminDAO.updateOrderStatus(orderId, newStatus)) {
-                    refreshOrders.run();
-                    JOptionPane.showMessageDialog(orderPanel, "Status updated to " + newStatus + " for Order: " + orderId);
-                } else {
-                    JOptionPane.showMessageDialog(orderPanel, "Status update failed.");
-                }
-            } else {
-                JOptionPane.showMessageDialog(orderPanel, "Please select an order to update data.");
+        browseBtn.setOnAction(e -> {
+            javafx.stage.FileChooser fileChooser = new javafx.stage.FileChooser();
+            fileChooser.setTitle("Select Product Image");
+            fileChooser.getExtensionFilters().add(
+                    new javafx.stage.FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg", "*.gif"));
+            java.io.File selectedFile = fileChooser.showOpenDialog(stage);
+            if (selectedFile != null) {
+                pathIn.setText(selectedFile.getAbsolutePath());
             }
         });
 
-        // Notify Customer Dialog Mock
-        notifyBtn.addActionListener(e -> {
-            int selectedRow = orderTable.getSelectedRow();
-            if (selectedRow != -1) {
-                int modelRow = orderTable.convertRowIndexToModel(selectedRow);
-                String email = orderModel.getValueAt(modelRow, 1).toString();
-                if(email.equals("N/A")) {
-                    JOptionPane.showMessageDialog(orderPanel, "No email linked to this order!");
-                } else {
-                    JOptionPane.showMessageDialog(orderPanel, "Email Notification sent successfully to:\n" + email);
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.setResultConverter(btn -> {
+            if (btn == saveButton) {
+                try {
+                    String name = nameIn.getText();
+                    double price = Double.parseDouble(priceIn.getText());
+                    int qty = Integer.parseInt(qtyIn.getText());
+                    String cat = catIn.getValue();
+                    String imgPath = pathIn.getText();
+
+                    if (name.isEmpty())
+                        throw new Exception("Product name is required.");
+
+                    ProductDAO dao = new ProductDAO();
+                    if (dao.addProduct(new Product(0, name, qty, price, cat, imgPath))) {
+                        dataList.setAll(dao.getAllProducts());
+                    }
+                } catch (Exception ex) {
+                    new Alert(Alert.AlertType.ERROR, "Validation Error: " + ex.getMessage()).show();
                 }
-            } else {
-                JOptionPane.showMessageDialog(orderPanel, "Please select an order to ping customer.");
             }
+            return null;
         });
+        dialog.showAndWait();
+    }
 
-        // Add standard panel refresh hook here maybe
-        refreshOrders.run();
+    // --- Orders Panels Migration ---
+    private BorderPane createOrdersPanel(String temporalType) {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(20));
 
-        // Double click details hook
-        orderTable.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                if (e.getClickCount() == 2 && orderTable.getSelectedRow() != -1) {
-                    int modelRow = orderTable.convertRowIndexToModel(orderTable.getSelectedRow());
-                    String targetId = orderModel.getValueAt(modelRow, 0).toString();
-                    Order targetOrder = null;
-                    AdminDAO adminDAO = new AdminDAO();
-                    for(Order o : adminDAO.getAllOrders()) {
-                        if (o.getOrderId().equals(targetId)) {
-                            targetOrder = o;
-                            break;
+        VBox topArea = new VBox(10);
+        OrderDAO dao = new OrderDAO();
+        String activeDate = dao.getEarliestPendingDeliveryDate(temporalType);
+        String displayDate = (activeDate != null) ? activeDate : "No Pending Orders";
+        
+        Label titleLabel = new Label(temporalType + " - Active Batch: " + displayDate);
+        titleLabel.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+        
+        Label subLabel = new Label("Showing the earliest batch with undelivered orders as per business rules.");
+        subLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #718096;");
+        
+        topArea.getChildren().addAll(titleLabel, subLabel);
+        panel.setTop(topArea);
+
+        TableView<Order> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Order, String> colId = new TableColumn<>("Order ID");
+        colId.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("orderId"));
+
+        TableColumn<Order, String> colCust = new TableColumn<>("Customer Email");
+        colCust.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("customerEmail"));
+
+        TableColumn<Order, String> colAddress = new TableColumn<>("Address");
+        colAddress.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("address"));
+
+        TableColumn<Order, String> colTime = new TableColumn<>("Order Date");
+        colTime.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("date"));
+
+        TableColumn<Order, String> colScheduled = new TableColumn<>("Scheduled Date");
+        colScheduled.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("scheduledDeliveryDate"));
+
+        TableColumn<Order, Double> colTotal = new TableColumn<>("Total ₹");
+        colTotal.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("total"));
+
+        TableColumn<Order, String> colStatus = new TableColumn<>("Status");
+        colStatus.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("status"));
+
+        TableColumn<Order, Void> colActions = new TableColumn<>("Update Status");
+        colActions.setCellFactory(param -> new TableCell<Order, Void>() {
+            private final ComboBox<String> statusCombo = new ComboBox<>(
+                    javafx.collections.FXCollections.observableArrayList("Pending", "Processing", "Delivered"));
+            private final Button updateBtn = new Button("Update");
+            private final HBox container = new HBox(10, statusCombo, updateBtn);
+
+            {
+                statusCombo.setPrefWidth(120);
+                updateBtn.setOnAction(e -> {
+                    Order order = getTableView().getItems().get(getIndex());
+                    String newStatus = statusCombo.getValue();
+                    if (newStatus != null) {
+                        OrderDAO dao = new OrderDAO();
+                        // 1. Update DB
+                        if (dao.updateOrderStatus(order.getOrderId(), newStatus)) {
+                            new Alert(Alert.AlertType.INFORMATION, "Status updated! Reloading data...").show();
+                            // 2. Refresh Table from DB to ensure local state matches DB
+                            if (temporalType.equalsIgnoreCase("Today")) {
+                                table.setItems(javafx.collections.FXCollections
+                                        .observableArrayList(dao.getSameDayOrdersForToday()));
+                            } else {
+                                table.setItems(javafx.collections.FXCollections
+                                        .observableArrayList(dao.getNextDayOrdersForTomorrow()));
+                            }
                         }
                     }
-                    if(targetOrder != null) {
-                        showOrderDetailsDialog(targetOrder);
-                    }
-                }
+                });
             }
-        });
 
-        // Assemble Sub-Components
-        JPanel centerWrapper = new JPanel(new BorderLayout());
-        centerWrapper.add(controlPanel, BorderLayout.NORTH);
-        centerWrapper.add(new JScrollPane(orderTable), BorderLayout.CENTER);
-
-        orderPanel.add(centerWrapper, BorderLayout.CENTER);
-
-        return orderPanel;
-    }
-
-    private JPanel createOrderStatusPanel() {
-        JPanel orderPanel = new JPanel(new BorderLayout());
-
-        JLabel titleLabel = new JLabel("Order Status", SwingConstants.CENTER);
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
-        titleLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-        orderPanel.add(titleLabel, BorderLayout.NORTH);
-
-        // Top Control Panel
-        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        String[] statusOptions = { "Pending", "Processing", "Delivered" };
-        JComboBox<String> updateStatusCombo = new JComboBox<>(statusOptions);
-        JButton updateStatusBtn = new JButton("Update Status");
-
-        controlPanel.add(new JLabel("Update Status:"));
-        controlPanel.add(updateStatusCombo);
-        controlPanel.add(updateStatusBtn);
-
-        String[] columns = { "Order ID", "Date", "Status", "Total", "Delivery Type" };
-        DefaultTableModel orderModel = new DefaultTableModel(columns, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-
-        JTable orderTable = new JTable(orderModel);
-        orderTable.setRowHeight(30);
-
-        Runnable refreshHook = () -> {
-            orderModel.setRowCount(0);
-            AdminDAO adminDAO = new AdminDAO();
-            for(Order o : adminDAO.getAllOrders()) {
-                orderModel.addRow(new Object[] { o.getOrderId(), o.getDate(), o.getStatus(), "₹" + String.format("%.2f", o.getTotal()), o.getDeliveryType() });
-            }
-        };
-        refreshHook.run();
-
-        // Update logic map
-        updateStatusBtn.addActionListener(e -> {
-            int selectedRow = orderTable.getSelectedRow();
-            if (selectedRow != -1) {
-                int modelRow = orderTable.convertRowIndexToModel(selectedRow);
-                String orderId = orderModel.getValueAt(modelRow, 0).toString();
-                String newStatus = (String)updateStatusCombo.getSelectedItem();
-                
-                AdminDAO adminDAO = new AdminDAO();
-                if (adminDAO.updateOrderStatus(orderId, newStatus)) {
-                    refreshHook.run();
-                    JOptionPane.showMessageDialog(AdminDashboard.this, "Order " + orderId + " updated to " + newStatus);
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
                 } else {
-                    JOptionPane.showMessageDialog(AdminDashboard.this, "Order update failed.");
-                }
-            } else {
-                JOptionPane.showMessageDialog(orderPanel, "Please select an order to update.");
-            }
-        });
-
-        // Double click details hook
-        orderTable.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2 && orderTable.getSelectedRow() != -1) {
-                    int modelRow = orderTable.convertRowIndexToModel(orderTable.getSelectedRow());
-                    String targetId = orderModel.getValueAt(modelRow, 0).toString();
-                    AdminDAO adminDAO = new AdminDAO();
-                    Order targetOrder = null;
-                    for(Order o : adminDAO.getAllOrders()) {
-                        if (o.getOrderId().equals(targetId)) {
-                            targetOrder = o;
-                            break;
-                        }
-                    }
-                    if(targetOrder != null) {
-                        showOrderDetailsDialog(targetOrder);
-                    }
+                    Order order = getTableView().getItems().get(getIndex());
+                    statusCombo.setValue(order.getStatus());
+                    setGraphic(container);
                 }
             }
         });
 
-        // Assemble Sub-Components
-        JPanel centerWrapper = new JPanel(new BorderLayout());
-        centerWrapper.add(controlPanel, BorderLayout.NORTH);
-        centerWrapper.add(new JScrollPane(orderTable), BorderLayout.CENTER);
+        table.getColumns().addAll(colId, colCust, colAddress, colTime, colScheduled, colTotal, colStatus, colActions);
 
-        orderPanel.add(centerWrapper, BorderLayout.CENTER);
+        // Data & Temporal Filtering
+        javafx.collections.ObservableList<Order> data;
+        if (activeDate != null) {
+            data = javafx.collections.FXCollections.observableArrayList(dao.getOrdersForRouteBatch(temporalType, activeDate));
+        } else {
+            data = javafx.collections.FXCollections.observableArrayList();
+        }
+        table.setItems(data);
 
-        return orderPanel;
+        // NEW: Double-click to open details
+        table.setRowFactory(tv -> {
+            TableRow<Order> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && (!row.isEmpty())) {
+                    Order rowData = row.getItem();
+                    showOrderDetailsPopup(rowData);
+                }
+            });
+            return row;
+        });
+
+        panel.setCenter(table);
+        return panel;
     }
 
-    private void showOrderDetailsDialog(Order order) {
-        JDialog dialog = new JDialog(this, "Admin Order View - " + order.getOrderId(), true);
-        dialog.setLayout(new BoxLayout(dialog.getContentPane(), BoxLayout.Y_AXIS));
-        dialog.setSize(400, 300);
-        dialog.setLocationRelativeTo(this);
+    // --- Daily Reports Panel Migration ---
+    private BorderPane createReportsPanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(20));
 
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        // 1. TOP area: Date Selection
+        HBox topArea = new HBox(15);
+        topArea.setAlignment(Pos.CENTER_LEFT);
+        topArea.setPadding(new Insets(0, 0, 20, 0));
 
-        JLabel titleLbl = new JLabel("Order Details: " + order.getOrderId());
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 18));
+        Label titleLabel = new Label("Analytics & Reports");
+        titleLabel.setStyle("-fx-font-size: 26px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
 
-        JLabel itemsLbl = new JLabel("<html><b>Items:</b><br>" + order.getItemsSummary() + "</html>");
-        JLabel addressLbl = new JLabel("<html><b>Address:</b><br>" + order.getAddress().replace("\n", "<br>") + "</html>");
-        JLabel paymentLbl = new JLabel("<html><b>Payment Method:</b> " + order.getPaymentMethod() + "</html>");
-        JLabel statusLbl = new JLabel("<html><b>Current Status:</b> " + order.getStatus() + "</html>");
+        DatePicker datePicker = new DatePicker(java.time.LocalDate.now());
+        Button generateBtn = new Button("Generate Detailed Report");
+        generateBtn.setStyle("-fx-background-color: #3182ce; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15; -fx-cursor: hand;");
 
-        panel.add(titleLbl);
-        panel.add(Box.createVerticalStrut(20));
-        panel.add(itemsLbl);
-        panel.add(Box.createVerticalStrut(15));
-        panel.add(addressLbl);
-        panel.add(Box.createVerticalStrut(15));
-        panel.add(paymentLbl);
-        panel.add(Box.createVerticalStrut(15));
-        panel.add(statusLbl);
-        panel.add(Box.createVerticalGlue());
+        topArea.getChildren().addAll(titleLabel, new Region(), new Label("Select Date:"), datePicker, generateBtn);
+        HBox.setHgrow(topArea.getChildren().get(1), Priority.ALWAYS);
+        panel.setTop(topArea);
 
-        JButton closeBtn = new JButton("Close");
-        closeBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        closeBtn.addActionListener(e -> dialog.dispose());
-        panel.add(closeBtn);
+        // 2. CENTER area: Scrollable Content
+        VBox mainContent = new VBox(30);
+        mainContent.setPadding(new Insets(10));
+        ScrollPane scrollPane = new ScrollPane(mainContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        panel.setCenter(scrollPane);
 
-        dialog.add(panel);
-        dialog.setVisible(true);
+        // Section A: Summary Metrics (Cards)
+        FlowPane metricsPane = new FlowPane(20, 20);
+        metricsPane.setAlignment(Pos.TOP_LEFT);
+
+        // Section B: Top Products Table
+        VBox topProductsSection = new VBox(10);
+        Label topTitle = new Label("Top Selling Products");
+        topTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        TableView<ReportDAO.TopProduct> topTable = new TableView<>();
+        topTable.setPrefHeight(250);
+        topTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        
+        TableColumn<ReportDAO.TopProduct, Integer> colRank = new TableColumn<>("Rank");
+        colRank.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("rank"));
+        TableColumn<ReportDAO.TopProduct, String> colProdName = new TableColumn<>("Product Name");
+        colProdName.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("name"));
+        TableColumn<ReportDAO.TopProduct, Integer> colQtySold = new TableColumn<>("Qty Sold");
+        colQtySold.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("quantity"));
+        TableColumn<ReportDAO.TopProduct, Double> colRev = new TableColumn<>("Revenue (₹)");
+        colRev.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("revenue"));
+        
+        topTable.getColumns().addAll(colRank, colProdName, colQtySold, colRev);
+        topProductsSection.getChildren().addAll(topTitle, topTable);
+
+        // Section C: Detailed Orders
+        VBox detailedOrdersSection = new VBox(10);
+        Label detailedTitle = new Label("All Orders for Selected Date");
+        detailedTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        TableView<Order> ordersTable = new TableView<>();
+        ordersTable.setPrefHeight(350);
+        ordersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Order, String> colOrderId = new TableColumn<>("Order ID");
+        colOrderId.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("orderId"));
+        TableColumn<Order, String> colCust = new TableColumn<>("Customer");
+        colCust.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("customerName"));
+        TableColumn<Order, String> colPhone = new TableColumn<>("Phone");
+        colPhone.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("customerPhone"));
+        TableColumn<Order, String> colType = new TableColumn<>("Type");
+        colType.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("deliveryType"));
+        TableColumn<Order, String> colStatus = new TableColumn<>("Status");
+        colStatus.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("status"));
+        TableColumn<Order, Double> colAmt = new TableColumn<>("Amount (₹)");
+        colAmt.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("total"));
+
+        ordersTable.getColumns().addAll(colOrderId, colCust, colPhone, colType, colStatus, colAmt);
+        detailedOrdersSection.getChildren().addAll(detailedTitle, ordersTable);
+
+        mainContent.getChildren().addAll(new Label("Performance Metrics Overview"), metricsPane, topProductsSection, detailedOrdersSection);
+
+        // Logic
+        generateBtn.setOnAction(e -> {
+            java.time.LocalDate date = datePicker.getValue();
+            if (date == null) return;
+            String dateStr = date.toString();
+            ReportDAO dao = new ReportDAO();
+            
+            // 1. Update Metrics
+            java.util.Map<String, Object> m = dao.getMetricsForDate(dateStr);
+            metricsPane.getChildren().clear();
+            metricsPane.getChildren().addAll(
+                createMetricCard("Total Orders", m.getOrDefault("total_orders", 0).toString(), "#3182ce"),
+                createMetricCard("Total Revenue", "₹" + String.format("%.2f", m.getOrDefault("total_revenue", 0.0)), "#38a169"),
+                createMetricCard("Same Day", m.getOrDefault("same_day_count", 0).toString(), "#805ad5"),
+                createMetricCard("Next Day", m.getOrDefault("next_day_count", 0).toString(), "#d69e2e"),
+                createMetricCard("Delivered", m.getOrDefault("delivered_count", 0).toString(), "#2f855a"),
+                createMetricCard("Processing", m.getOrDefault("processing_count", 0).toString(), "#3182ce"),
+                createMetricCard("Pending", m.getOrDefault("pending_count", 0).toString(), "#e53e3e"),
+                createMetricCard("Avg Value", "₹" + String.format("%.2f", m.getOrDefault("avg_order_value", 0.0)), "#4a5568")
+            );
+
+            // 2. Update Top Products Table
+            topTable.setItems(javafx.collections.FXCollections.observableArrayList(dao.getTopSellingProducts(dateStr)));
+            
+            // 3. Update Detailed Orders Table
+            ordersTable.setItems(javafx.collections.FXCollections.observableArrayList());
+            ordersTable.getItems().addAll(new OrderDAO().getOrdersByCriteria("Same Day", "'" + dateStr + "'"));
+            ordersTable.getItems().addAll(new OrderDAO().getOrdersByCriteria("Next Day", "'" + dateStr + "'"));
+            
+            new Alert(Alert.AlertType.INFORMATION, "Report generated for " + dateStr).show();
+        });
+
+        // Initial load
+        generateBtn.fire();
+
+        return panel;
+    }
+
+    private VBox createMetricCard(String title, String value, String color) {
+        VBox card = new VBox(5);
+        card.setPadding(new Insets(15));
+        card.setPrefWidth(180);
+        card.setStyle("-fx-background-color: white; -fx-border-color: " + color + "; -fx-border-width: 0 0 0 5; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 0); -fx-border-radius: 4;");
+        
+        Label t = new Label(title);
+        t.setStyle("-fx-text-fill: #718096; -fx-font-size: 13px;");
+        Label v = new Label(value);
+        v.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: " + color + ";");
+        
+        card.getChildren().addAll(t, v);
+        return card;
+    }
+
+    private void refreshDashboardStats() {
+        ReportDAO reportDao = new ReportDAO();
+        java.util.Map<String, Object> metrics = reportDao.getMetricsForDate(java.time.LocalDate.now().toString());
+        int orders = (int) metrics.getOrDefault("total_orders", 0);
+        double revenue = (double) metrics.getOrDefault("total_revenue", 0.0);
+        statsLabel.setText(String.format("Total Orders Today: %d | Revenue: ₹%.2f", orders, revenue));
+    }
+
+    private void handleLogout() {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "Logging out from Admin session...");
+        alert.showAndWait();
+        stage.close();
+        Platform.runLater(() -> {
+            try {
+                new SuperMartMain().start(new Stage());
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+    }
+
+    // Bridge for Swing/Manual launch
+    private double shopLat = 18.5204;
+    private double shopLon = 73.8567;
+
+    private BorderPane createRoutePlannerPanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(15));
+        
+        Label title = new Label("External Delivery Route Planner");
+        title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
+        
+        Label shopStatus = new Label("Detecting shop location...");
+        shopStatus.setStyle("-fx-text-fill: gray;");
+
+        Button generateBtn = new Button("Optimize & Open Map");
+        generateBtn.getStyleClass().add("btn-primary");
+        
+        new Thread(() -> {
+            double[] loc = GeocodingService.getIPLocation();
+            if (loc != null) {
+                shopLat = loc[0]; shopLon = loc[1];
+                Platform.runLater(() -> shopStatus.setText("✅ Shop located via IP."));
+            }
+        }).start();
+
+        ComboBox<String> typeCombo = new ComboBox<>(javafx.collections.FXCollections.observableArrayList("Same Day", "Next Day"));
+        typeCombo.getSelectionModel().select(1); // Default to Next Day
+        
+        Label batchLabel = new Label("Active Batch: Detecting...");
+        batchLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #3182ce;");
+
+        HBox top = new HBox(15, new VBox(5, title, shopStatus, batchLabel), new Region(), new Label("Type:"), typeCombo, generateBtn);
+        HBox.setHgrow(top.getChildren().get(1), Priority.ALWAYS);
+        top.setAlignment(Pos.CENTER_LEFT);
+        panel.setTop(top);
+
+        OrderDAO orderDao = new OrderDAO();
+        
+        // Listener to update batch label
+        java.util.function.Consumer<String> updateBatchLabel = (type) -> {
+            String date = orderDao.getEarliestPendingDeliveryDate(type);
+            batchLabel.setText("Active Batch: " + (date != null ? date : "No Pending Orders"));
+        };
+        
+        typeCombo.setOnAction(e -> updateBatchLabel.accept(typeCombo.getValue()));
+        updateBatchLabel.accept(typeCombo.getValue());
+
+        routeTable = new TableView<>();
+        routeTable.setPrefHeight(250);
+        routeTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        TableColumn<OrderRoute, Integer> colStop = new TableColumn<>("Stop");
+        colStop.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("stop"));
+        TableColumn<OrderRoute, String> colCustName = new TableColumn<>("Customer");
+        colCustName.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("name"));
+        TableColumn<OrderRoute, String> colPhone = new TableColumn<>("Phone");
+        colPhone.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("phone"));
+        TableColumn<OrderRoute, String> colAddr = new TableColumn<>("Address");
+        colAddr.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("address"));
+        routeTable.getColumns().addAll(colStop, colCustName, colPhone, colAddr);
+
+        VBox center = new VBox(20);
+        center.setAlignment(Pos.CENTER);
+        center.setPadding(new Insets(30));
+        
+        Label infoLabel = new Label("The map will open in your default browser for a full-screen optimized experience.");
+        infoLabel.setStyle("-fx-text-fill: gray; -fx-font-style: italic;");
+        
+        Button googleTestBtn = new Button("DEBUG: Test Browser (Open Google)");
+        googleTestBtn.setOnAction(e -> {
+            System.out.println("[DEBUG] Test Browser button clicked");
+            try {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI("https://www.google.com"));
+            } catch (Exception ex) {
+                System.err.println("[DEBUG] Browser Test Failed: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+
+        VBox centerContent = new VBox(20, routeTable, center);
+        VBox.setVgrow(routeTable, Priority.ALWAYS);
+        panel.setCenter(centerContent);
+        center.getChildren().addAll(infoLabel, googleTestBtn);
+
+        generateBtn.setOnAction(e -> {
+            String selectedType = typeCombo.getValue();
+            String activeDate = orderDao.getEarliestPendingDeliveryDate(selectedType);
+            
+            if (activeDate == null) {
+                new Alert(Alert.AlertType.INFORMATION, "No undelivered orders for " + selectedType).show();
+                return;
+            }
+
+            System.out.println("[DEBUG] Admin Route button clicked for " + selectedType + " batch: " + activeDate);
+            List<Order> orders = orderDao.getOrdersForRouteBatch(selectedType, activeDate).stream()
+                .filter(o -> o.getLatitude() != 0 && o.getLongitude() != 0)
+                .collect(java.util.stream.Collectors.toList());
+
+            if (orders.isEmpty()) { 
+                new Alert(Alert.AlertType.INFORMATION, "No orders with valid coordinates in this batch.").show(); 
+                return; 
+            }
+            
+            new Thread(() -> {
+                List<Order> optimized = new RoutePlanner().optimizeSequence(orders, shopLat, shopLon);
+                Platform.runLater(() -> {
+                    routeTable.getItems().setAll(optimized.stream()
+                        .map(o -> new OrderRoute(optimized.indexOf(o)+1, o.getCustomerName(), o.getCustomerPhone(), o.getAddress()))
+                        .collect(Collectors.toList()));
+                    
+                    RouteMapLauncher.openRouteMapInBrowser(optimized, "Admin Dashboard", selectedType + " Batch: " + activeDate);
+                });
+            }).start();
+        });
+
+        return panel;
+    }
+
+
+    public static class OrderRoute {
+        private final int stop;
+        private final String name;
+        private final String phone;
+        private final String address;
+
+        public OrderRoute(int stop, String name, String phone, String address) {
+            this.stop = stop;
+            this.name = name;
+            this.phone = phone;
+            this.address = address;
+        }
+
+        public int getStop() { return stop; }
+        public String getName() { return name; }
+        public String getPhone() { return phone; }
+        public String getAddress() { return address; }
+    }
+
+    private void showOrderDetailsPopup(Order order) {
+        Stage popupStage = new Stage();
+        popupStage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        popupStage.setTitle("Order Details - " + order.getOrderId());
+
+        VBox root = new VBox(20);
+        root.setPadding(new Insets(20));
+        root.setStyle("-fx-background-color: white;");
+
+        Label title = new Label("ORDER SUMMARY & PACKING SLIP");
+        title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+
+        // 1. Header Information
+        GridPane header = new GridPane();
+        header.setHgap(30);
+        header.setVgap(10);
+        header.add(new Label("Order ID:"), 0, 0);
+        Label oid = new Label(order.getOrderId()); oid.setStyle("-fx-font-weight: bold;");
+        header.add(oid, 1, 0);
+        
+        header.add(new Label("Customer:"), 0, 1);
+        header.add(new Label(order.getCustomerName() + " (" + order.getCustomerEmail() + ")"), 1, 1);
+        
+        header.add(new Label("Phone:"), 0, 2);
+        Label ph = new Label(order.getCustomerPhone()); ph.setStyle("-fx-text-fill: #3182ce; -fx-font-weight: bold;");
+        header.add(ph, 1, 2);
+        
+        header.add(new Label("Status:"), 2, 0);
+        header.add(new Label(order.getStatus()), 3, 0);
+        
+        header.add(new Label("Type:"), 2, 1);
+        header.add(new Label(order.getDeliveryType()), 3, 1);
+        
+        header.add(new Label("Date:"), 2, 2);
+        header.add(new Label(order.getDate()), 3, 2);
+        
+        Label addrLabel = new Label("Delivery Address: " + order.getAddress());
+        addrLabel.setWrapText(true);
+        addrLabel.setStyle("-fx-background-color: #f7fafc; -fx-padding: 10; -fx-border-color: #e2e8f0; -fx-border-radius: 4;");
+
+        // 2. Items Table
+        TableView<OrderItem> itemsTable = new TableView<>();
+        itemsTable.setPlaceholder(new Label("No items found for this order. Check order_items table for OrderID: " + order.getOrderId()));
+        itemsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        
+        TableColumn<OrderItem, String> colProd = new TableColumn<>("Product");
+        colProd.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getProduct().getName()));
+        
+        TableColumn<OrderItem, Integer> colQty = new TableColumn<>("Qty");
+        colQty.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("qty"));
+        
+        TableColumn<OrderItem, Double> colPrice = new TableColumn<>("Unit Price");
+        colPrice.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("priceAtOrder"));
+        
+        TableColumn<OrderItem, Double> colTotal = new TableColumn<>("Line Total");
+        colTotal.setCellValueFactory(data -> new javafx.beans.property.SimpleDoubleProperty(data.getValue().getQty() * data.getValue().getPriceAtOrder()).asObject());
+
+        itemsTable.getColumns().addAll(colProd, colQty, colPrice, colTotal);
+        
+        // Load Data from DAO with Debugging
+        System.out.println("[DEBUG_UI] Opening details for: " + order.getOrderId() + " | Cust: " + order.getCustomerName());
+        List<OrderItem> items = new OrderDAO().getOrderItemsByOrderId(order.getOrderId());
+        System.out.println("[DEBUG_UI] Received " + items.size() + " items for table.");
+        
+        itemsTable.setItems(javafx.collections.FXCollections.observableArrayList(items));
+
+        // 3. Footer Summary
+        int totalQty = items.stream().mapToInt(OrderItem::getQty).sum();
+        HBox footer = new HBox(20);
+        footer.setAlignment(Pos.CENTER_RIGHT);
+        Label summary = new Label("Distinct Items: " + items.size() + " | Total Qty: " + totalQty + " | Grand Total: ₹" + String.format("%.2f", order.getTotal()));
+        summary.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+        footer.getChildren().add(summary);
+
+        Button closeBtn = new Button("Close Details");
+        closeBtn.setOnAction(e -> popupStage.close());
+        closeBtn.setStyle("-fx-background-color: #4a5568; -fx-text-fill: white; -fx-padding: 8 20;");
+
+        root.getChildren().addAll(title, header, addrLabel, new Separator(), new Label("ITEMS TO PACK"), itemsTable, footer, closeBtn);
+
+        Scene scene = new Scene(root, 750, 650);
+        popupStage.setScene(scene);
+        popupStage.show();
+    }
+
+    private BorderPane createDeliveryManagementPanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(20));
+
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: Agents List & Registration
+        VBox agentBox = new VBox(20);
+        agentBox.setPadding(new Insets(20));
+        
+        Label agentTitle = new Label("Delivery Agents");
+        agentTitle.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
+        
+        TableView<DeliveryAgent> agentTable = new TableView<>();
+        agentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        TableColumn<DeliveryAgent, Integer> colId = new TableColumn<>("ID");
+        colId.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("agentId"));
+        TableColumn<DeliveryAgent, String> colName = new TableColumn<>("Name");
+        colName.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("fullName"));
+        TableColumn<DeliveryAgent, String> colArea = new TableColumn<>("Area");
+        colArea.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("assignedArea"));
+        TableColumn<DeliveryAgent, String> colStatus = new TableColumn<>("Status");
+        colStatus.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("approvalStatus"));
+        
+        agentTable.getColumns().addAll(colId, colName, colArea, colStatus);
+        
+        DeliveryDAO agentDao = new DeliveryDAO();
+        agentTable.setItems(javafx.collections.FXCollections.observableArrayList(agentDao.getAllAgents()));
+
+        Button addAgentBtn = new Button("Register New Agent");
+        addAgentBtn.setOnAction(e -> showAddAgentDialog(agentTable));
+
+        agentBox.getChildren().addAll(agentTitle, agentTable, addAgentBtn);
+        tabs.getTabs().add(new Tab("Agents", agentBox));
+
+        // Tab 2: Assign Orders
+        VBox assignBox = new VBox(20);
+        assignBox.setPadding(new Insets(20));
+        
+        Label assignTitle = new Label("Assign Pending Orders (Active Batches)");
+        assignTitle.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
+        
+        Label batchInfo = new Label("Showing earliest pending batches for both types.");
+        batchInfo.setStyle("-fx-text-fill: #718096;");
+        
+        TableView<Order> pendingTable = new TableView<>();
+        pendingTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        TableColumn<Order, String> colOid = new TableColumn<>("Order ID");
+        colOid.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("orderId"));
+        TableColumn<Order, String> colType = new TableColumn<>("Type");
+        colType.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("deliveryType"));
+        pendingTable.getColumns().addAll(colOid, colType);
+        
+        OrderDAO orderDao = new OrderDAO();
+        javafx.collections.ObservableList<Order> pendingOrders = javafx.collections.FXCollections.observableArrayList();
+        
+        for (String type : new String[]{"Same Day", "Next Day"}) {
+            String activeDate = orderDao.getEarliestPendingDeliveryDate(type);
+            if (activeDate != null) {
+                pendingOrders.addAll(orderDao.getOrdersForRouteBatch(type, activeDate).stream()
+                    .filter(o -> "Pending".equals(o.getStatus()) || "Processing".equals(o.getStatus()))
+                    .collect(java.util.stream.Collectors.toList()));
+            }
+        }
+        pendingTable.setItems(pendingOrders);
+
+        HBox controlBox = new HBox(15);
+        controlBox.setAlignment(Pos.CENTER_LEFT);
+        ComboBox<DeliveryAgent> agentCombo = new ComboBox<>(javafx.collections.FXCollections.observableArrayList(agentDao.getAllAgents()));
+        agentCombo.setPromptText("Select Agent");
+        Button assignBtn = new Button("Assign Selected Order");
+        
+        assignBtn.setOnAction(e -> {
+            Order selectedOrder = pendingTable.getSelectionModel().getSelectedItem();
+            DeliveryAgent selectedAgent = agentCombo.getValue();
+            if (selectedOrder != null && selectedAgent != null) {
+                handleAssignOrder(selectedOrder, selectedAgent, pendingTable);
+            } else {
+                new Alert(Alert.AlertType.WARNING, "Select both an order and an agent.").show();
+            }
+        });
+
+        controlBox.getChildren().addAll(new Label("Assign to:"), agentCombo, assignBtn);
+        assignBox.getChildren().addAll(assignTitle, batchInfo, pendingTable, controlBox);
+        tabs.getTabs().add(new Tab("Assignments", assignBox));
+
+        panel.setCenter(tabs);
+        return panel;
+    }
+
+    private void handleAssignOrder(Order o, DeliveryAgent a, TableView<Order> table) {
+        DeliveryAssignmentDAO dao = new DeliveryAssignmentDAO();
+        int seq = dao.getNextSequenceForAgent(a.getAgentId(), o.getDeliveryType());
+        
+        // Simple ETA: 15 (dispatch) + (seq * 12 travel) + (seq * 5 service)
+        int eta = 15 + (seq * 12) + (seq * 5);
+        
+        if (dao.assignOrder(o.getOrderId(), a.getAgentId(), o.getDeliveryType(), seq, eta)) {
+            // Update order status to Processing if it was Pending
+            if ("Pending".equals(o.getStatus())) {
+                new OrderDAO().updateOrderStatus(o.getOrderId(), "Processing");
+            }
+            
+            // Notification to Delivery Guy
+            NotificationService.getInstance().sendToDeliveryGuy(
+                a.getEmail(),
+                "New Assignment",
+                "Order " + o.getOrderId() + " assigned to you for " + o.getDeliveryType() + " delivery. ETA: " + eta + " mins.",
+                o.getOrderId()
+            );
+
+            new Alert(Alert.AlertType.INFORMATION, "Order assigned successfully!").show();
+            table.getItems().remove(o);
+        }
+    }
+
+    private void showAddAgentDialog(TableView<DeliveryAgent> table) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Register Delivery Agent");
+        ButtonType saveButton = new ButtonType("Register", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButton, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10); grid.setVgap(10);
+        grid.setPadding(new Insets(20));
+
+        TextField nameIn = new TextField();
+        TextField emailIn = new TextField();
+        TextField phoneIn = new TextField();
+        TextField pwdIn = new TextField();
+        TextField areaIn = new TextField();
+        ComboBox<String> vehicleIn = new ComboBox<>(javafx.collections.FXCollections.observableArrayList("Bike", "Van", "Bicycle"));
+        vehicleIn.getSelectionModel().select(0);
+
+        grid.add(new Label("Full Name:"), 0, 0); grid.add(nameIn, 1, 0);
+        grid.add(new Label("Email:"), 0, 1); grid.add(emailIn, 1, 1);
+        grid.add(new Label("Phone:"), 0, 2); grid.add(phoneIn, 1, 2);
+        grid.add(new Label("Password:"), 0, 3); grid.add(pwdIn, 1, 3);
+        grid.add(new Label("Area:"), 0, 4); grid.add(areaIn, 1, 4);
+        grid.add(new Label("Vehicle:"), 0, 5); grid.add(vehicleIn, 1, 5);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(btn -> {
+            if (btn == saveButton) {
+                DeliveryDAO dao = new DeliveryDAO();
+                if (dao.registerAgent(nameIn.getText(), emailIn.getText(), phoneIn.getText(), pwdIn.getText(), vehicleIn.getValue(), areaIn.getText(), "APPROVED")) {
+                    table.setItems(javafx.collections.FXCollections.observableArrayList(dao.getAllAgents()));
+                }
+            }
+            return null;
+        });
+        dialog.showAndWait();
+    }
+
+    public void startApp() {
+        Platform.runLater(() -> {
+            try {
+                start(new Stage());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
 
     public static void main(String[] args) {
-        // Enforce default Swing cross-platform logic (Metal)
-        try {
-            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                new AdminDashboard("admin@test.com").setVisible(true);
-            }
-        });
+        launch(args);
     }
 }
-

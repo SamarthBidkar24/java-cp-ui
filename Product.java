@@ -6,6 +6,8 @@ public class Product {
     private String category;
     private String imagePath;
 
+    public Product() {}
+
     public Product(int id, String name, int quantity, double price, String category, String imagePath) {
         this.id = id;
         this.name = name;

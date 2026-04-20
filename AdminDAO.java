@@ -1,211 +1,81 @@
+import java.sql.*;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
+import java.sql.Statement;
 
 /**
- * AdminDAO class for administrative operations on products and orders.
+ * AdminDAO class for administrative authentication and registration.
+ * Product and Order operations are moved to ProductDAO and OrderDAO.
  */
 public class AdminDAO {
 
-    /**
-     * Retrieves all products from the 'products' table.
-     * 
-     * @return List of Product objects.
-     */
-    public List<Product> getAllProducts() {
-        List<Product> products = new ArrayList<>();
-        String query = "SELECT * FROM products";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
+    public AdminDAO() {
+        checkAndCreateTables();
+        seedDefaultAdmin();
+    }
 
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                rs = pstmt.executeQuery();
-                while (rs.next()) {
-                    Product product = new Product(
-                        rs.getInt("id"),
-                        rs.getString("name"),
-                        rs.getInt("quantity"),
-                        rs.getDouble("price"),
-                        rs.getString("category"),
-                        rs.getString("image_path")
-                    );
-                    products.add(product);
+    private void seedDefaultAdmin() {
+        try (Connection conn = DBConnection.getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            // Check if ANY admin exists
+            ResultSet rsCount = stmt.executeQuery("SELECT COUNT(*) FROM admins");
+            if (rsCount.next() && rsCount.getInt(1) == 0) {
+                System.out.println("[SECURITY] No admins found. Seeding default admin...");
+                registerAdmin("System Admin", "admin@supermart.com", "0000000000", "admin123");
+                return;
+            }
+
+            // Check if 'admin@supermart.com' exists but is still plaintext
+            String checkSql = "SELECT password_salt FROM admins WHERE email = 'admin@supermart.com'";
+            ResultSet rsCheck = stmt.executeQuery(checkSql);
+            if (rsCheck.next()) {
+                String salt = rsCheck.getString("password_salt");
+                if (salt == null || salt.trim().isEmpty()) {
+                    System.out.println("[SECURITY] Found legacy admin. Migrating to hashed password...");
+                    String newSalt = SecurityUtils.generateSalt();
+                    String newHash = SecurityUtils.hashPassword("admin123", newSalt);
+                    String updateSql = "UPDATE admins SET password = ?, password_salt = ?, role = 'ADMIN', is_active = TRUE WHERE email = 'admin@supermart.com'";
+                    try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
+                        pstmt.setString(1, newHash);
+                        pstmt.setString(2, newSalt);
+                        pstmt.executeUpdate();
+                    }
                 }
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, rs);
         }
-        return products;
     }
 
-    /**
-     * Adds a new product to the database.
-     * 
-     * @return true if insertion was successful.
-     */
-    public boolean addProduct(String name, int quantity, double price, String category, String imagePath) {
-        String query = "INSERT INTO products (name, quantity, price, category, image_path) VALUES (?, ?, ?, ?, ?)";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        boolean success = false;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setString(1, name);
-                pstmt.setInt(2, quantity);
-                pstmt.setDouble(3, price);
-                pstmt.setString(4, category);
-                pstmt.setString(5, imagePath);
-                
-                int rows = pstmt.executeUpdate();
-                success = (rows == 1);
-            }
+    private void checkAndCreateTables() {
+        try (Connection conn = DBConnection.getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            // Helper to add column if not exists
+            addColIfMissing(stmt, "admins", "password_salt", "VARCHAR(100)");
+            addColIfMissing(stmt, "admins", "role", "VARCHAR(20) DEFAULT 'ADMIN'");
+            addColIfMissing(stmt, "admins", "is_active", "BOOLEAN DEFAULT TRUE");
+            
+            // Ensure existing admins are active
+            stmt.executeUpdate("UPDATE admins SET is_active = TRUE WHERE is_active IS NULL");
+            
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, null);
         }
-        return success;
     }
 
-    /**
-     * Updates an existing product in the database.
-     * 
-     * @return true if update was successful.
-     */
-    public boolean updateProduct(int id, String name, int quantity, double price, String category, String imagePath) {
-        String query = "UPDATE products SET name=?, quantity=?, price=?, category=?, image_path=? WHERE id=?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        boolean success = false;
-
+    private void addColIfMissing(Statement stmt, String table, String col, String type) {
         try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setString(1, name);
-                pstmt.setInt(2, quantity);
-                pstmt.setDouble(3, price);
-                pstmt.setString(4, category);
-                pstmt.setString(5, imagePath);
-                pstmt.setInt(6, id);
-
-                int rows = pstmt.executeUpdate();
-                success = (rows == 1);
-            }
+            stmt.executeUpdate("ALTER TABLE " + table + " ADD COLUMN " + col + " " + type);
+            System.out.println("[DB] Added column " + col + " to " + table);
         } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, null);
-        }
-        return success;
-    }
-
-    /**
-     * Deletes a product from the database.
-     * 
-     * @param id The product ID to delete.
-     * @return true if deletion was successful.
-     */
-    public boolean deleteProduct(int id) {
-        String query = "DELETE FROM products WHERE id=?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        boolean success = false;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setInt(1, id);
-                int rows = pstmt.executeUpdate();
-                success = (rows == 1);
+            if (e.getErrorCode() != 1060) { // 1060 = Duplicate column name
+                System.err.println("[DB] Error adding column " + col + ": " + e.getMessage());
             }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, null);
         }
-        return success;
-    }
-
-    /**
-     * Retrieves all orders from the 'orders' table.
-     * 
-     * @return List of Order objects.
-     */
-    public List<Order> getAllOrders() {
-        List<Order> orders = new ArrayList<>();
-        String query = "SELECT * FROM orders";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                rs = pstmt.executeQuery();
-                while (rs.next()) {
-                    Order order = new Order(
-                        rs.getString("order_id"),
-                        rs.getString("order_date"),
-                        rs.getString("status"),
-                        rs.getDouble("total"),
-                        rs.getString("delivery_type"),
-                        rs.getString("address"),
-                        rs.getString("payment_method"),
-                        rs.getString("items_summary"),
-                        rs.getString("customer_email")
-                    );
-                    orders.add(order);
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, rs);
-        }
-        return orders;
-    }
-
-    /**
-     * Updates the status of an existing order.
-     * 
-     * @return true if update was successful.
-     */
-    public boolean updateOrderStatus(String orderId, String newStatus) {
-        String query = "UPDATE orders SET status=? WHERE order_id=?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        boolean success = false;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setString(1, newStatus);
-                pstmt.setString(2, orderId);
-                int rows = pstmt.executeUpdate();
-                success = (rows == 1);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, null);
-        }
-        return success;
     }
 
     /**
@@ -215,101 +85,86 @@ public class AdminDAO {
      * @param password The admin's password.
      * @return Admin object if successful, null otherwise.
      */
-    public Admin loginAdmin(String email, String password) {
-        String query = "SELECT * FROM admins WHERE email = ? AND password = ?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        Admin admin = null;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setString(1, email);
-                pstmt.setString(2, password);
-                rs = pstmt.executeQuery();
+    public Admin adminLogin(String email, String password) {
+        String query = "SELECT * FROM admins WHERE email = ? AND is_active = TRUE";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            
+            pstmt.setString(1, email);
+            try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    admin = new Admin(
-                        rs.getInt("id"),
-                        rs.getString("name"),
-                        rs.getString("email"),
-                        rs.getString("phone"),
-                        rs.getString("password")
-                    );
+                    String storedHash = rs.getString("password");
+                    String storedSalt = rs.getString("password_salt");
+                    
+                    if (storedSalt == null || storedSalt.isEmpty()) {
+                        // LEGACY FALLBACK: Plaintext check
+                        if (password.equals(storedHash)) {
+                            System.out.println("[SECURITY] Upgrading legacy plaintext account for: " + email);
+                            String newSalt = SecurityUtils.generateSalt();
+                            String newHash = SecurityUtils.hashPassword(password, newSalt);
+                            String updateSql = "UPDATE admins SET password = ?, password_salt = ? WHERE email = ?";
+                            try (PreparedStatement upstmt = conn.prepareStatement(updateSql)) {
+                                upstmt.setString(1, newHash);
+                                upstmt.setString(2, newSalt);
+                                upstmt.setString(3, email);
+                                upstmt.executeUpdate();
+                            }
+                            return new Admin(rs.getInt("id"), rs.getString("name"), rs.getString("email"), rs.getString("phone"), newHash);
+                        }
+                    } else {
+                        // SECURE HASHED check
+                        if (SecurityUtils.verifyPassword(password, storedHash, storedSalt)) {
+                            return new Admin(
+                                rs.getInt("id"),
+                                rs.getString("name"),
+                                rs.getString("email"),
+                                rs.getString("phone"),
+                                rs.getString("password")
+                            );
+                        }
+                    }
                 }
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, rs);
         }
-        return admin;
+        return null;
     }
 
     /**
      * Checks if an admin email already exists.
-     * 
-     * @param email The email to check.
-     * @return true if it exists.
      */
     public boolean emailExists(String email) {
         String query = "SELECT COUNT(*) FROM admins WHERE email = ?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        boolean exists = false;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setString(1, email);
-                rs = pstmt.executeQuery();
-                if (rs.next()) {
-                    exists = rs.getInt(1) > 0;
-                }
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            
+            pstmt.setString(1, email);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return rs.getInt(1) > 0;
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, rs);
         }
-        return exists;
+        return false;
     }
 
-    /**
-     * Registers a new admin.
-     * 
-     * @return true if successful.
-     */
     public boolean registerAdmin(String name, String email, String phone, String password) {
-        String query = "INSERT INTO admins (name, email, phone, password) VALUES (?, ?, ?, ?)";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        boolean success = false;
-
-        try {
-            conn = DBConnection.getConnection();
-            if (conn != null) {
-                pstmt = conn.prepareStatement(query);
-                pstmt.setString(1, name);
-                pstmt.setString(2, email);
-                pstmt.setString(3, phone);
-                pstmt.setString(4, password);
-                success = pstmt.executeUpdate() == 1;
-            }
+        String salt = SecurityUtils.generateSalt();
+        String hash = SecurityUtils.hashPassword(password, salt);
+        String query = "INSERT INTO admins (name, email, phone, password, password_salt, role, is_active) VALUES (?, ?, ?, ?, ?, 'ADMIN', TRUE)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            
+            pstmt.setString(1, name);
+            pstmt.setString(2, email);
+            pstmt.setString(3, phone);
+            pstmt.setString(4, hash);
+            pstmt.setString(5, salt);
+            return pstmt.executeUpdate() == 1;
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, null);
+            return false;
         }
-        return success;
-    }
-
-    private void closeResources(Connection conn, PreparedStatement pstmt, ResultSet rs) {
-        try { if (rs != null) rs.close(); } catch (SQLException e) { e.printStackTrace(); }
-        try { if (pstmt != null) pstmt.close(); } catch (SQLException e) { e.printStackTrace(); }
-        try { if (conn != null) conn.close(); } catch (SQLException e) { e.printStackTrace(); }
     }
 }

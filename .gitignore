@@ -1,7 +1,23 @@
+# Java / Compiled files
 *.class
-.DS_Store
+*.jar
+*.war
+*.ear
+
+# Logs and temp files
+*.log
+start_cmd.txt
+preview.html
+scratch/
+
+# IDE files
+.vscode/
 .idea/
-.vsc/
-bin/
-out/
-target/
+*.iml
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db

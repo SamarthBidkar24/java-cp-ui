@@ -1,0 +1,42 @@
+/* auth.css */
+.root {
+    -fx-font-family: "Segoe UI", Arial, sans-serif;
+    -fx-font-size: 14px;
+    -fx-background-color: #fcfcfc;
+}
+
+.label {
+    -fx-text-fill: #333333;
+}
+
+.text-field, .password-field, .combo-box {
+    -fx-background-color: white;
+    -fx-border-color: #d1d5db;
+    -fx-border-radius: 3px;
+    -fx-padding: 8;
+}
+
+.button {
+    -fx-background-color: #efefef;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 3px;
+    -fx-padding: 8 16;
+    -fx-cursor: hand;
+}
+
+.button:hover {
+    -fx-background-color: #e5e5e5;
+}
+
+.tab-pane .tab-header-area .tab-header-background {
+    -fx-background-color: #f3f4f6;
+}
+
+.tab {
+    -fx-background-color: #e5e7eb;
+    -fx-padding: 5 15;
+}
+
+.tab:selected {
+    -fx-background-color: white;
+}

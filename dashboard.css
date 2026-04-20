@@ -1,0 +1,42 @@
+/* dashboard.css */
+.root {
+    -fx-font-family: "Segoe UI", Arial, sans-serif;
+    -fx-font-size: 14px;
+    -fx-background-color: #f3f4f6;
+}
+
+.nav-bar {
+    -fx-background-color: white;
+    -fx-border-color: #e5e7eb;
+    -fx-border-width: 0 0 1 0;
+}
+
+.sidebar {
+    -fx-background-color: white;
+    -fx-border-color: #e5e7eb;
+    -fx-border-width: 0 1 0 0;
+}
+
+.sidebar-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #4b5563;
+    -fx-border-width: 0;
+    -fx-padding: 12 15;
+    -fx-cursor: hand;
+}
+
+.sidebar-button:hover {
+    -fx-background-color: #f9fafb;
+    -fx-text-fill: #111827;
+}
+
+.label-title {
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1f2937;
+}
+
+.button {
+    -fx-background-radius: 4px;
+    -fx-padding: 8 16;
+}

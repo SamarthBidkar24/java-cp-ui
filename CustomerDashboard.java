@@ -1,729 +1,824 @@
-import javax.swing.*;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.stage.Stage;
+import javafx.scene.web.WebView;
+import javafx.scene.web.WebEngine;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
-import javax.swing.table.DefaultTableModel;
+public class CustomerDashboard extends Application {
 
-public class CustomerDashboard extends JFrame {
-
-    private java.util.List<OrderItem> cartList = new java.util.ArrayList<>();
+    private Customer customer;
+    private StackPane contentArea;
+    private Label cartLabel;
+    private java.util.List<OrderItem> cartItems = new java.util.ArrayList<>();
     private int cartCount = 0;
-    private JLabel cartCountLabel;
-    private CardLayout cardLayout;
-    private JPanel centerPanel;
-    private DefaultTableModel cartTableModel;
-    private JLabel subtotalLabel, deliveryLabel, totalLabel;
-    private double subtotal = 0;
-    private int deliveryFee = 30;
-    private Customer currentUser;
-    private Runnable refreshOrdersData;
+    private Stage stage;
+    private double validatedLat = 0, validatedLon = 0;
+    private String validatedDisplayName = "";
+    private String geocodeStatus = "NOT_VALIDATED";
+    
+    // Payment State
+    private boolean isPaymentConfirmed = false;
+    private String currentOrderIdForUpi = "";
+    private javafx.scene.image.ImageView qrView = new javafx.scene.image.ImageView();
+    private Button bellBtn;
+    private java.util.function.Consumer<Notification> notificationListener;
 
-    public CustomerDashboard(Customer user) {
-        this.currentUser = user;
-        // Set window properties
-        setTitle("Customer Dashboard - SuperMart");
-        setSize(850, 650);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLocationRelativeTo(null); // Center on screen
-        setLayout(new BorderLayout());
-
-        // --- Top Navigation Panel (North) ---
-        JPanel topNavPanel = new JPanel();
-        topNavPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 20, 10)); // Horizontal flow with spacing
-
-        JButton homeBtn = new JButton("Home");
-        JButton cartBtn = new JButton("Cart");
-        cartCountLabel = new JLabel("(0)");
-        cartCountLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
-        cartCountLabel.setForeground(Color.BLUE);
-
-        JButton ordersBtn = new JButton("Orders");
-        JButton profileBtn = new JButton("Profile");
-        JButton logoutBtn = new JButton("Logout");
-
-        // Group Cart Button and Counter Label together visually
-        JPanel cartContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
-        cartContainer.add(cartBtn);
-        cartContainer.add(cartCountLabel);
-
-        topNavPanel.add(homeBtn);
-        topNavPanel.add(cartContainer);
-        topNavPanel.add(ordersBtn);
-        topNavPanel.add(profileBtn);
-        topNavPanel.add(logoutBtn);
-
-        // Logout Action
-        logoutBtn.addActionListener(e -> {
-            JOptionPane.showMessageDialog(CustomerDashboard.this, "Logging out...");
-            dispose();
-            new SuperMartMain().setVisible(true);
-        });
-
-        // --- Dynamic Home Panel Integration ---
-        JPanel homePanelContainer = createHomePanel();
-
-        // --- Cart Panel Initialization ---
-        JPanel cartPanel = createCartPanel();
-
-        // --- Setup CardLayout Center ---
-        cardLayout = new CardLayout();
-        centerPanel = new JPanel(cardLayout);
-        centerPanel.add(homePanelContainer, "HOME");
-        centerPanel.add(cartPanel, "CART");
-        centerPanel.add(createOrdersPanel(), "ORDERS");
-        centerPanel.add(createProfilePanel(), "PROFILE");
-
-        // Map UI Actions for Navigation
-        homeBtn.addActionListener(e -> {
-            // refresh data whenever coming back to home
-            if (gridPanel != null && searchProductsField != null) {
-                renderProductGrid(gridPanel, searchProductsField.getText());
-            }
-            cardLayout.show(centerPanel, "HOME");
-        });
-        cartBtn.addActionListener(e -> cardLayout.show(centerPanel, "CART"));
-        ordersBtn.addActionListener(e -> {
-            if(refreshOrdersData != null) refreshOrdersData.run();
-            cardLayout.show(centerPanel, "ORDERS");
-        });
-        profileBtn.addActionListener(e -> cardLayout.show(centerPanel, "PROFILE"));
-
-        // Add panels to frame
-        add(topNavPanel, BorderLayout.NORTH);
-        add(centerPanel, BorderLayout.CENTER);
+    public CustomerDashboard() {
     }
 
-    private JPanel gridPanel;
-    private JTextField searchProductsField;
-
-    private JPanel createHomePanel() {
-        JPanel homeOuter = new JPanel(new BorderLayout());
-
-        // Top Search Toolbar
-        JPanel searchBarPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
-        searchProductsField = new JTextField(25);
-        JButton clearSearchBtn = new JButton("Clear");
-
-        searchBarPanel.add(new JLabel("Search Products:"));
-        searchBarPanel.add(searchProductsField);
-        searchBarPanel.add(clearSearchBtn);
-
-        homeOuter.add(searchBarPanel, BorderLayout.NORTH);
-
-        // Center Database.Product Grid (2 columns)
-        gridPanel = new JPanel(new GridLayout(0, 2, 15, 15));
-        gridPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        JScrollPane scrollGrid = new JScrollPane(gridPanel);
-        // Faster scrolling
-        scrollGrid.getVerticalScrollBar().setUnitIncrement(16);
-
-        homeOuter.add(scrollGrid, BorderLayout.CENTER);
-
-        // Behavior Hooks
-        clearSearchBtn.addActionListener(e -> {
-            searchProductsField.setText("");
-            renderProductGrid(gridPanel, "");
-        });
-
-        searchProductsField.getDocument().addDocumentListener(new DocumentListener() {
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                renderProductGrid(gridPanel, searchProductsField.getText());
-            }
-
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                renderProductGrid(gridPanel, searchProductsField.getText());
-            }
-
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                renderProductGrid(gridPanel, searchProductsField.getText());
-            }
-        });
-
-        // Initial Load
-        renderProductGrid(gridPanel, "");
-
-        return homeOuter;
+    public CustomerDashboard(Customer customer) {
+        this.customer = customer;
     }
 
-    private void renderProductGrid(JPanel grid, String searchQuery) {
-        grid.removeAll();
-        String query = searchQuery.toLowerCase().trim();
+    @Override
+    public void start(Stage primaryStage) {
+        this.stage = primaryStage;
+        primaryStage.setTitle("Customer Dashboard - SuperMart");
 
-        AdminDAO adminDAO = new AdminDAO();
-        for (Product p : adminDAO.getAllProducts()) {
-            // Only show products with stock
-            if (p.getQuantity() > 0) {
-                // Apply search filter if present
-                if (query.isEmpty() || p.getName().toLowerCase().contains(query)) {
-                    grid.add(createProductCard(p));
+        BorderPane root = new BorderPane();
+
+        // 1. TOP area: Navigation Bar
+        HBox topNav = new HBox(25);
+        topNav.getStyleClass().add("customer-nav");
+        topNav.setPadding(new Insets(15, 30, 15, 30));
+        topNav.setAlignment(Pos.CENTER);
+
+        String[] navItems = { "Home", "Cart", "Orders", "Profile", "Logout" };
+
+        for (String name : navItems) {
+            Button navBtn = new Button(name);
+            navBtn.getStyleClass().add("nav-btn");
+            if (name.equals("Cart")) {
+                cartLabel = new Label("Cart (" + cartCount + ")");
+                navBtn.setGraphic(cartLabel);
+                navBtn.setText("");
+            }
+
+            navBtn.setOnAction(e -> {
+                if (name.equals("Logout")) {
+                    handleLogout();
+                } else {
+                    switchPanel(name);
                 }
-            }
+            });
+            topNav.getChildren().add(navBtn);
         }
-        grid.revalidate();
-        grid.repaint();
+        
+        bellBtn = NotificationUI.createNotificationBell(Notification.UserType.CUSTOMER, customer.getEmail());
+        topNav.getChildren().addAll(new Region(), bellBtn);
+        HBox.setHgrow(topNav.getChildren().get(topNav.getChildren().size()-2), Priority.ALWAYS);
+        
+        root.setTop(topNav);
+        
+        // Setup Live Notifications
+        setupNotifications();
+
+        // 2. CENTER area: Content Area
+        contentArea = new StackPane();
+        contentArea.setPadding(new Insets(20));
+        switchPanel("Home");
+        root.setCenter(contentArea);
+
+        Scene scene = new Scene(root, 950, 750);
+        scene.getStylesheets().add(getClass().getResource("customer_dashboard.css").toExternalForm());
+        stage.setScene(scene);
+        stage.show();
     }
 
-    // Helper method to create individual product cards mapping to Database.Product object
-    private JPanel createProductCard(Product p) {
-        JPanel card = new JPanel();
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1));
-        card.setBackground(Color.WHITE);
+    private void setupNotifications() {
+        notificationListener = n -> {
+            if (n.getUserType() == Notification.UserType.CUSTOMER && n.getTargetUser().equalsIgnoreCase(customer.getEmail())) {
+                NotificationUI.updateBellBadge(bellBtn, Notification.UserType.CUSTOMER, customer.getEmail());
+                NotificationUI.showToast(stage, n.getTitle(), n.getMessage());
+            }
+        };
+        NotificationService.getInstance().subscribe(notificationListener);
+    }
 
-        // Process Image
-        JLabel imageLabel = new JLabel();
-        imageLabel.setPreferredSize(new Dimension(150, 100));
-        imageLabel.setMaximumSize(new Dimension(150, 100));
-        imageLabel.setOpaque(true);
-        imageLabel.setBackground(new Color(240, 240, 240));
-        imageLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
-
-        if (p.getImagePath() != null && !p.getImagePath().isEmpty()) {
-            ImageIcon originalIcon = new ImageIcon(p.getImagePath());
-            Image scaledImg = originalIcon.getImage().getScaledInstance(150, 100, Image.SCALE_SMOOTH);
-            imageLabel.setIcon(new ImageIcon(scaledImg));
+    private void switchPanel(String name) {
+        contentArea.getChildren().clear();
+        if (name.equals("Home")) {
+            contentArea.getChildren().add(createHomePanel());
+        } else if (name.equals("Cart")) {
+            contentArea.getChildren().add(createCartPanel());
+        } else if (name.equals("Orders")) {
+            contentArea.getChildren().add(createOrdersHistoryPanel());
+        } else if (name.equals("Profile")) {
+            contentArea.getChildren().add(createProfilePanel());
         } else {
-            imageLabel.setText("No Image");
+            VBox panel = new VBox(20);
+            panel.setAlignment(Pos.CENTER);
+            Label title = new Label(name + " Screen");
+            title.setStyle("-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+            Label status = new Label("Functionality for [" + name + "] is preserved.");
+            status.setStyle("-fx-text-fill: #718096; -fx-font-style: italic;");
+            panel.getChildren().addAll(title, status);
+            contentArea.getChildren().add(panel);
+        }
+    }
+
+    // --- Customer Home Migration ---
+    private BorderPane createHomePanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(10));
+        HBox topBar = new HBox(15);
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        topBar.setPadding(new Insets(0, 0, 15, 0));
+
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search products...");
+        searchField.setPrefWidth(300);
+
+        Button clearBtn = new Button("Clear");
+        clearBtn.setOnAction(e -> searchField.clear());
+        topBar.getChildren().addAll(new Label("Search:"), searchField, clearBtn);
+        panel.setTop(topBar);
+
+        FlowPane grid = new FlowPane(20, 20);
+        grid.setPadding(new Insets(10));
+        grid.setAlignment(Pos.TOP_LEFT);
+        ScrollPane scrollPane = new ScrollPane(grid);
+        scrollPane.setFitToWidth(true);
+        panel.setCenter(scrollPane);
+
+        ProductDAO dao = new ProductDAO();
+        java.util.List<Product> allProducts = dao.getAllProducts();
+
+        // Requirements: Show only products with quantity > 0
+        java.util.List<Product> inStockProducts = allProducts.stream()
+                .filter(p -> p.getQuantity() > 0)
+                .collect(java.util.stream.Collectors.toList());
+
+        renderProducts(grid, inStockProducts);
+
+        searchField.textProperty().addListener((obs, oldV, newV) -> {
+            java.util.List<Product> filtered = inStockProducts.stream()
+                    .filter(p -> p.getName().toLowerCase().contains(newV.toLowerCase()))
+                    .collect(java.util.stream.Collectors.toList());
+            renderProducts(grid, filtered);
+        });
+        return panel;
+    }
+
+    private void renderProducts(FlowPane grid, java.util.List<Product> products) {
+        grid.getChildren().clear();
+        for (Product p : products)
+            grid.getChildren().add(createProductCard(p));
+    }
+
+    private VBox createProductCard(Product p) {
+        VBox card = new VBox(10);
+        card.getStyleClass().add("product-card");
+        card.setPadding(new Insets(15));
+        card.setAlignment(Pos.CENTER);
+        card.setPrefWidth(180);
+
+        javafx.scene.image.ImageView imgView = new javafx.scene.image.ImageView();
+        imgView.setFitHeight(100);
+        imgView.setFitWidth(100);
+        if (p.getImagePath() != null && !p.getImagePath().isEmpty()) {
+            try {
+                imgView.setImage(new javafx.scene.image.Image("file:" + p.getImagePath(), 100, 100, true, true));
+            } catch (Exception e) {
+            }
         }
 
-        // Database.Product Details
-        JLabel idLabel = new JLabel("ID: " + p.getId());
-        idLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        idLabel.setForeground(Color.GRAY);
-        idLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        Label nameLbl = new Label(p.getName());
+        nameLbl.setStyle("-fx-font-weight: bold;");
+        Label priceLbl = new Label("₹" + p.getPrice());
+        Label stockLbl = new Label("Stock: " + p.getQuantity());
+        stockLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #718096;");
 
-        JLabel nameLabel = new JLabel(p.getName());
-        nameLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
-        nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        Button addBtn = new Button("Add to Cart");
+        addBtn.getStyleClass().add("add-cart-btn");
+        addBtn.setOnAction(e -> {
+            // Group by unique Product ID
+            OrderItem existing = cartItems.stream()
+                    .filter(oi -> oi.getProduct().getId() == p.getId())
+                    .findFirst()
+                    .orElse(null);
 
-        JLabel priceLabel = new JLabel("₹" + String.format("%.2f", p.getPrice()));
-        priceLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
-        priceLabel.setForeground(new Color(0, 128, 0)); // Green color for price
-        priceLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        JLabel qtyLabel = new JLabel("Qty: " + p.getQuantity());
-        qtyLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        qtyLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        // Add to Cart Button
-        JButton addToCartBtn = new JButton("Add to Cart");
-        addToCartBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        addToCartBtn.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                boolean found = false;
-                for (OrderItem item : cartList) {
-                    if (item.product.getId() == p.getId()) {
-                        if (item.qty < p.getQuantity()) {
-                            item.qty++;
-                        } else {
-                            JOptionPane.showMessageDialog(card, "Max stock reached!");
-                            return;
-                        }
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    cartList.add(new OrderItem(p, 1));
-                }
-                updateCartBadge();
-                renderCartTable();
-                JOptionPane.showMessageDialog(card, p.getName() + " added to cart!");
+            if (existing != null) {
+                existing.qty++;
+            } else {
+                cartItems.add(new OrderItem(p, 1));
             }
+
+            cartCount++;
+            if (cartLabel != null)
+                cartLabel.setText("Cart (" + cartCount + ")");
+            new Alert(Alert.AlertType.INFORMATION, p.getName() + " added to cart!").show();
         });
 
-        // Add Spacing and Components to Card
-        card.add(Box.createRigidArea(new Dimension(0, 5)));
-        card.add(idLabel);
-        card.add(Box.createRigidArea(new Dimension(0, 5)));
-        card.add(imageLabel);
-        card.add(Box.createRigidArea(new Dimension(0, 10)));
-        card.add(nameLabel);
-        card.add(Box.createRigidArea(new Dimension(0, 5)));
-        card.add(priceLabel);
-        card.add(Box.createRigidArea(new Dimension(0, 2)));
-        card.add(qtyLabel);
-        card.add(Box.createRigidArea(new Dimension(0, 10)));
-        card.add(addToCartBtn);
-        card.add(Box.createRigidArea(new Dimension(0, 10)));
-
+        card.getChildren().addAll(imgView, nameLbl, priceLbl, stockLbl, addBtn);
         return card;
     }
 
-    // Builder method for the Cart Panel layout
-    private JPanel createCartPanel() {
-        JPanel cartOuter = new JPanel(new BorderLayout());
-        cartOuter.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // 1. Cart Table
-        String[] columns = { "Product", "Qty +/-", "Price(₹)", "Total(₹)", "Remove" };
-        cartTableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return column == 1 || column == 4;
-            }
-        };
-
-        JTable cartTable = new JTable(cartTableModel);
-        cartTable.setRowHeight(40);
-        
-        cartTable.getColumnModel().getColumn(1).setCellRenderer(new QtyCellRenderer());
-        cartTable.getColumnModel().getColumn(1).setCellEditor(new QtyCellEditor(new JCheckBox()));
-        cartTable.getColumnModel().getColumn(4).setCellRenderer(new RemoveCellRenderer());
-        cartTable.getColumnModel().getColumn(4).setCellEditor(new RemoveCellEditor(new JCheckBox()));
-
-        JScrollPane tableScroll = new JScrollPane(cartTable);
-        tableScroll.setPreferredSize(new Dimension(800, 200));
-
-        // 2. Checkout Container underneath Table
-        JPanel checkoutPanel = new JPanel();
-        checkoutPanel.setLayout(new BoxLayout(checkoutPanel, BoxLayout.Y_AXIS));
-        checkoutPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
-
-        // 2A. Pricing Breakdown
-        JPanel pricePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 5));
-        subtotalLabel = new JLabel("Subtotal: ₹0.00");
-        deliveryLabel = new JLabel("Delivery: ₹" + deliveryFee);
-        totalLabel = new JLabel("Grand Total: ₹0.00");
-        totalLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
-
-        pricePanel.add(subtotalLabel);
-        pricePanel.add(deliveryLabel);
-        pricePanel.add(totalLabel);
-        checkoutPanel.add(pricePanel);
-
-        // 2B. Shipping Speed
-        JPanel shippingPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        shippingPanel.setBorder(BorderFactory.createTitledBorder("Delivery Speed"));
-        JRadioButton sameDayBtn = new JRadioButton("Same Day (+₹50)");
-        JRadioButton nextDayBtn = new JRadioButton("Next Day (+₹30)", true);
-        ButtonGroup shippingGroup = new ButtonGroup();
-        shippingGroup.add(sameDayBtn);
-        shippingGroup.add(nextDayBtn);
-        shippingPanel.add(sameDayBtn);
-        shippingPanel.add(nextDayBtn);
-
-        ActionListener deliveryListener = e -> {
-            if (sameDayBtn.isSelected()) deliveryFee = 50;
-            else if (nextDayBtn.isSelected()) deliveryFee = 30;
-            renderCartTable(); // Update total calculation
-        };
-        sameDayBtn.addActionListener(deliveryListener);
-        nextDayBtn.addActionListener(deliveryListener);
-        checkoutPanel.add(shippingPanel);
-
-        // 2C. Address & Maps
-        JPanel mapPanel = new JPanel(new BorderLayout(10, 0));
-        mapPanel.setBorder(BorderFactory.createTitledBorder("Delivery Address"));
-        JTextArea addressArea = new JTextArea(5, 40);
-        mapPanel.add(new JScrollPane(addressArea), BorderLayout.CENTER);
-        checkoutPanel.add(mapPanel);
-
-        // 2D. Payment & Place Order Layout
-        JPanel paymentPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
-        paymentPanel.add(new JLabel("Payment Method:"));
-        String[] paymentTypes = { "UPI" };
-        JComboBox<String> paymentCombo = new JComboBox<>(paymentTypes);
-        paymentPanel.add(paymentCombo);
-
-        JButton placeOrderBtn = new JButton("Place Order");
-        placeOrderBtn.setFont(new Font("SansSerif", Font.BOLD, 16));
-        placeOrderBtn.setBackground(new Color(46, 204, 113));
-        placeOrderBtn.setForeground(Color.WHITE);
-
-        placeOrderBtn.addActionListener(e -> {
-            if (cartList.isEmpty()) {
-                JOptionPane.showMessageDialog(cartOuter, "Your cart is empty!", "Cart Empty", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            if (addressArea.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(cartOuter, "Please enter a delivery address.", "Missing Address", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            
-            String fakeOrderId = "ORD-" + (int) (Math.random() * 1000000);
-            
-            StringBuilder summary = new StringBuilder();
-            for(OrderItem item : cartList) {
-                summary.append(item.product.getName()).append(" (x").append(item.qty).append("), ");
-            }
-            if(summary.length() > 2) summary.setLength(summary.length() - 2);
-
-            String status = "Pending";
-            String date = java.time.LocalDate.now().toString();
-            String delType = sameDayBtn.isSelected() ? "Same Day" : "Next Day";
-            
-            Order order = new Order(fakeOrderId, date, status, subtotal + deliveryFee, delType, addressArea.getText().trim(), (String)paymentCombo.getSelectedItem(), summary.toString(), currentUser.getEmail());
-            OrderDAO orderDAO = new OrderDAO();
-            boolean success = orderDAO.placeOrder(order);
-
-            if (success) {
-                JOptionPane.showMessageDialog(cartOuter, "Order " + fakeOrderId + " placed successfully!", "Order Placed", JOptionPane.INFORMATION_MESSAGE);
-                cartList.clear();
-                addressArea.setText("");
-                updateCartBadge();
-                renderCartTable();
-                cardLayout.show(centerPanel, "HOME");
-            } else {
-                JOptionPane.showMessageDialog(cartOuter, "Failed to place order. Database error.", "Error", JOptionPane.ERROR_MESSAGE);
-            }
-        });
-
-        paymentPanel.add(placeOrderBtn);
-        checkoutPanel.add(paymentPanel);
-
-        cartOuter.add(tableScroll, BorderLayout.CENTER);
-        cartOuter.add(checkoutPanel, BorderLayout.SOUTH);
-
-        return cartOuter;
-    }
-
-    private void updateCartBadge() {
-        cartCount = 0;
-        for(OrderItem item : cartList) {
-            cartCount += item.qty;
-        }
-        cartCountLabel.setText("(" + cartCount + ")");
-    }
-
-    private void renderCartTable() {
-        if(cartTableModel == null) return;
-        cartTableModel.setRowCount(0);
-        subtotal = 0;
-        for (OrderItem item : cartList) {
-            double itemTotal = item.product.getPrice() * item.qty;
-            subtotal += itemTotal;
-            cartTableModel.addRow(new Object[] { 
-                item.product.getName(), 
-                item.qty, 
-                "₹" + String.format("%.2f", item.product.getPrice()), 
-                "₹" + String.format("%.2f", itemTotal), 
-                "Remove" 
-            });
-        }
-        subtotalLabel.setText("Subtotal: ₹" + String.format("%.2f", subtotal));
-        deliveryLabel.setText("Delivery: ₹" + deliveryFee);
-        totalLabel.setText("Grand Total: ₹" + String.format("%.2f", (subtotal + deliveryFee)));
-    }
-
-    // --- Custom Renderers & Editors ---
-    class QtyPanel extends JPanel {
-        JButton minusBtn = new JButton("-");
-        JButton plusBtn = new JButton("+");
-        JLabel qtyLabel = new JLabel("0", SwingConstants.CENTER);
-        public QtyPanel() {
-            setLayout(new BorderLayout());
-            minusBtn.setMargin(new Insets(2, 5, 2, 5));
-            plusBtn.setMargin(new Insets(2, 5, 2, 5));
-            qtyLabel.setPreferredSize(new Dimension(30, 20));
-            add(minusBtn, BorderLayout.WEST);
-            add(qtyLabel, BorderLayout.CENTER);
-            add(plusBtn, BorderLayout.EAST);
-        }
-    }
-
-    class QtyCellRenderer extends QtyPanel implements javax.swing.table.TableCellRenderer {
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-            if (value != null) qtyLabel.setText(value.toString());
-            return this;
-        }
-    }
-
-    class QtyCellEditor extends DefaultCellEditor {
-        private QtyPanel panel;
-        private int currentRow;
-        public QtyCellEditor(JCheckBox checkBox) {
-            super(checkBox);
-            panel = new QtyPanel();
-            panel.minusBtn.addActionListener(e -> {
-                if (currentRow >= 0 && currentRow < cartList.size()) {
-                    OrderItem item = cartList.get(currentRow);
-                    if (item.qty > 1) {
-                        item.qty--;
-                        fireEditingStopped();
-                        renderCartTable();
-                        updateCartBadge();
-                    } else {
-                        fireEditingStopped();
-                    }
-                } else {
-                    fireEditingStopped();
-                }
-            });
-            panel.plusBtn.addActionListener(e -> {
-                if (currentRow >= 0 && currentRow < cartList.size()) {
-                    OrderItem item = cartList.get(currentRow);
-                    if (item.qty < item.product.getQuantity()) {
-                        item.qty++;
-                        fireEditingStopped();
-                        renderCartTable();
-                        updateCartBadge();
-                    } else {
-                        fireEditingStopped();
-                        JOptionPane.showMessageDialog(null, "Max stock reached for " + item.product.getName());
-                    }
-                } else {
-                    fireEditingStopped();
-                }
-            });
-        }
-        @Override
-        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
-            currentRow = table.convertRowIndexToModel(row);
-            if (value != null) panel.qtyLabel.setText(value.toString());
+    // --- Customer Cart Migration ---
+    private BorderPane createCartPanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(10));
+        if (cartItems.isEmpty()) {
+            panel.setCenter(new Label("Your cart is empty."));
             return panel;
         }
-        @Override
-        public Object getCellEditorValue() {
-            return panel.qtyLabel.getText();
-        }
-    }
 
-    class RemoveCellRenderer extends JButton implements javax.swing.table.TableCellRenderer {
-        public RemoveCellRenderer() {
-            setText("Remove");
-            setForeground(Color.RED);
-            setFocusPainted(false);
-        }
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-            return this;
-        }
-    }
+        TableView<OrderItem> table = new TableView<>(javafx.collections.FXCollections.observableArrayList(cartItems));
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
-    class RemoveCellEditor extends DefaultCellEditor {
-        private JButton button;
-        private int currentRow;
-        public RemoveCellEditor(JCheckBox checkBox) {
-            super(checkBox);
-            button = new JButton("Remove");
-            button.setForeground(Color.RED);
-            button.setFocusPainted(false);
-            button.addActionListener(e -> {
-                if (currentRow >= 0 && currentRow < cartList.size()) {
-                    cartList.remove(currentRow);
-                    fireEditingStopped();
-                    renderCartTable();
-                    updateCartBadge();
-                } else {
-                    fireEditingStopped();
-                }
-            });
-        }
-        @Override
-        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
-            currentRow = table.convertRowIndexToModel(row);
-            return button;
-        }
-        @Override
-        public Object getCellEditorValue() {
-            return "Remove";
-        }
-    }
+        TableColumn<OrderItem, String> colName = new TableColumn<>("Product");
+        colName.setCellValueFactory(
+                data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getProduct().getName()));
 
-    // Builder method for the Orders Panel
-    private JPanel createOrdersPanel() {
-        JPanel ordersOuter = new JPanel(new BorderLayout(0, 10));
-        ordersOuter.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        TableColumn<OrderItem, String> colPrice = new TableColumn<>("Price");
+        colPrice.setCellValueFactory(
+                data -> new javafx.beans.property.SimpleStringProperty("₹" + data.getValue().getProduct().getPrice()));
 
-        JPanel topPnl = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton refreshBtn = new JButton("Refresh Orders");
-        topPnl.add(refreshBtn);
-        ordersOuter.add(topPnl, BorderLayout.NORTH);
-
-        String[] columns = { "Order ID", "Date", "Status", "Total(₹)", "Delivery" };
-        DefaultTableModel ordersModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-
-        JTable ordersTable = new JTable(ordersModel);
-        ordersTable.setRowHeight(30);
-
-        refreshOrdersData = () -> {
-            ordersModel.setRowCount(0);
-            OrderDAO orderDAO = new OrderDAO();
-            java.util.List<Order> orders = orderDAO.getOrdersByCustomer(currentUser.getEmail());
-            for(Order o : orders) {
-                ordersModel.addRow(new Object[]{ o.getOrderId(), o.getDate(), o.getStatus(), "₹" + String.format("%.2f", o.getTotal()), o.getDeliveryType() });
-            }
-        };
-        refreshOrdersData.run();
-        refreshBtn.addActionListener(e -> refreshOrdersData.run());
-
-        // Double-click to view details
-        ordersTable.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2 && ordersTable.getSelectedRow() != -1) {
-                    int row = ordersTable.convertRowIndexToModel(ordersTable.getSelectedRow());
-                    String targetId = ordersModel.getValueAt(row, 0).toString();
-                    
-                    OrderDAO orderDAO = new OrderDAO();
-                    Order targetOrder = null;
-                    for(Order o : orderDAO.getOrdersByCustomer(currentUser.getEmail())) {
-                        if(o.getOrderId().equals(targetId)) {
-                            targetOrder = o;
-                            break;
-                        }
+        TableColumn<OrderItem, Void> colQty = new TableColumn<>("Quantity");
+        colQty.setCellFactory(param -> new TableCell<>() {
+            private final Button plus = new Button("+");
+            private final Button minus = new Button("-");
+            private final Label qtyLbl = new Label();
+            private final HBox box = new HBox(10, minus, qtyLbl, plus);
+            {
+                box.setAlignment(Pos.CENTER);
+                plus.setOnAction(e -> {
+                    OrderItem item = getTableView().getItems().get(getIndex());
+                    item.qty++;
+                    cartCount++;
+                    cartLabel.setText("Cart (" + cartCount + ")");
+                    getTableView().refresh();
+                    updateCartUI(panel, table);
+                });
+                minus.setOnAction(e -> {
+                    OrderItem item = getTableView().getItems().get(getIndex());
+                    if (item.qty > 1) {
+                        item.qty--;
+                        cartCount--;
+                        cartLabel.setText("Cart (" + cartCount + ")");
+                        getTableView().refresh();
+                        updateCartUI(panel, table);
                     }
-                    if(targetOrder != null) {
-                        showOrderDetailsDialog(targetOrder);
-                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty)
+                    setGraphic(null);
+                else {
+                    qtyLbl.setText(String.valueOf(getTableView().getItems().get(getIndex()).qty));
+                    setGraphic(box);
                 }
             }
         });
 
-        ordersOuter.add(new JScrollPane(ordersTable), BorderLayout.CENTER);
-        return ordersOuter;
+        TableColumn<OrderItem, Void> colRemove = new TableColumn<>("Action");
+        colRemove.setCellFactory(param -> new TableCell<>() {
+            private final Button btn = new Button("Remove");
+            {
+                btn.getStyleClass().add("btn-remove");
+                btn.setOnAction(e -> {
+                    OrderItem item = getTableView().getItems().get(getIndex());
+                    cartItems.remove(item);
+                    cartCount -= item.qty;
+                    cartLabel.setText("Cart (" + cartCount + ")");
+                    updateCartUI(panel, table);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty)
+                    setGraphic(null);
+                else
+                    setGraphic(btn);
+            }
+        });
+
+        table.getColumns().addAll(colName, colPrice, colQty, colRemove);
+        panel.setCenter(table);
+        updateCartUI(panel, table);
+        return panel;
     }
 
-    private void showOrderDetailsDialog(Order order) {
-        JDialog dialog = new JDialog(this, "Order Details - " + order.getOrderId(), true);
-        dialog.setLayout(new BoxLayout(dialog.getContentPane(), BoxLayout.Y_AXIS));
-        dialog.setSize(400, 300);
-        dialog.setLocationRelativeTo(this);
+    private void updateCartUI(BorderPane panel, TableView<OrderItem> table) {
+        if (cartItems.isEmpty()) {
+            panel.setCenter(new Label("Your cart is empty."));
+            panel.setRight(null);
+            return;
+        }
+        table.setItems(javafx.collections.FXCollections.observableArrayList(cartItems));
 
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        VBox summary = new VBox(15);
+        summary.setPadding(new Insets(20));
+        summary.setPrefWidth(350);
+        summary.getStyleClass().add("card");
 
-        JLabel titleLbl = new JLabel("Order Details: " + order.getOrderId());
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 18));
+        double subtotal = cartItems.stream().mapToDouble(oi -> oi.getProduct().getPrice() * oi.qty).sum();
+        Label subLbl = new Label("Subtotal: ₹" + String.format("%.2f", subtotal));
+        ComboBox<String> deliveryType = new ComboBox<>(
+                javafx.collections.FXCollections.observableArrayList("Same Day (+₹50)", "Next Day (+₹30)"));
+        deliveryType.getSelectionModel().select(0);
 
-        JLabel itemsLbl = new JLabel("<html><b>Items:</b><br>" + order.getItemsSummary() + "</html>");
-        JLabel addressLbl = new JLabel("<html><b>Address:</b><br>" + order.getAddress().replace("\n", "<br>") + "</html>");
-        JLabel paymentLbl = new JLabel("<html><b>Payment Method:</b> " + order.getPaymentMethod() + "</html>");
-        JLabel statusLbl = new JLabel("<html><b>Status:</b> <font color='blue'>" + order.getStatus() + "</font></html>");
+        Label totalLbl = new Label();
+        
+        // Dynamic Order ID for UPI Note
+        if (currentOrderIdForUpi.isEmpty()) {
+            currentOrderIdForUpi = "ORD" + (System.currentTimeMillis() % 100000);
+        }
 
-        panel.add(titleLbl);
-        panel.add(Box.createVerticalStrut(15));
-        panel.add(itemsLbl);
-        panel.add(Box.createVerticalStrut(10));
-        panel.add(addressLbl);
-        panel.add(Box.createVerticalStrut(10));
-        panel.add(paymentLbl);
-        panel.add(Box.createVerticalStrut(10));
-        panel.add(statusLbl);
-        panel.add(Box.createVerticalGlue());
-
-        JButton closeBtn = new JButton("Close");
-        closeBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        closeBtn.addActionListener(e -> dialog.dispose());
-        panel.add(closeBtn);
-
-        dialog.add(panel);
-        dialog.setVisible(true);
-    }
-
-    private JPanel createProfilePanel() {
-        JPanel outer = new JPanel(new GridBagLayout());
-        outer.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(10, 10, 10, 10);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.WEST;
-
-        Font labelFont = new Font("SansSerif", Font.BOLD, 14);
-        Font valueFont = new Font("SansSerif", Font.PLAIN, 14);
-
-        // Name
-        gbc.gridx = 0; gbc.gridy = 0;
-        JLabel nameLbl = new JLabel("Name:"); nameLbl.setFont(labelFont);
-        outer.add(nameLbl, gbc);
-        gbc.gridx = 1;
-        JLabel nameVal = new JLabel(currentUser.getName()); nameVal.setFont(valueFont);
-        outer.add(nameVal, gbc);
-
-        // Email
-        gbc.gridx = 0; gbc.gridy = 1;
-        JLabel emailLbl = new JLabel("Email:"); emailLbl.setFont(labelFont);
-        outer.add(emailLbl, gbc);
-        gbc.gridx = 1;
-        JLabel emailVal = new JLabel(currentUser.getEmail()); emailVal.setFont(valueFont);
-        outer.add(emailVal, gbc);
-
-        // Phone
-        gbc.gridx = 0; gbc.gridy = 2;
-        JLabel phoneLbl = new JLabel("Phone:"); phoneLbl.setFont(labelFont);
-        outer.add(phoneLbl, gbc);
-        gbc.gridx = 1;
-        JLabel phoneVal = new JLabel(currentUser.getPhone()); phoneVal.setFont(valueFont);
-        outer.add(phoneVal, gbc);
-
-        // Separator
-        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
-        outer.add(new JSeparator(), gbc);
-
-        // Password Update Form
-        gbc.gridy = 4; gbc.gridwidth = 1;
-        JLabel curPwdLbl = new JLabel("Current Password:"); curPwdLbl.setFont(labelFont);
-        outer.add(curPwdLbl, gbc);
-        gbc.gridx = 1;
-        JPasswordField curPwdField = new JPasswordField(15);
-        outer.add(curPwdField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 5;
-        JLabel newPwdLbl = new JLabel("New Password:"); newPwdLbl.setFont(labelFont);
-        outer.add(newPwdLbl, gbc);
-        gbc.gridx = 1;
-        JPasswordField newPwdField = new JPasswordField(15);
-        outer.add(newPwdField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 6;
-        JLabel confirmPwdLbl = new JLabel("Confirm New:"); confirmPwdLbl.setFont(labelFont);
-        outer.add(confirmPwdLbl, gbc);
-        gbc.gridx = 1;
-        JPasswordField confirmPwdField = new JPasswordField(15);
-        outer.add(confirmPwdField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 2;
-        JButton updateBtn = new JButton("Update Password");
-        updateBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
-        outer.add(updateBtn, gbc);
-
-        updateBtn.addActionListener(e -> {
-            String current = new String(curPwdField.getPassword());
-            String newPwd = new String(newPwdField.getPassword());
-            String confirm = new String(confirmPwdField.getPassword());
-
-            if (current.isEmpty() || newPwd.isEmpty() || confirm.isEmpty()) {
-                JOptionPane.showMessageDialog(outer, "All fields are required.", "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            if (!current.equals(currentUser.getPassword())) {
-                JOptionPane.showMessageDialog(outer, "Current password is incorrect.", "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            if (!newPwd.equals(confirm)) {
-                JOptionPane.showMessageDialog(outer, "New passwords do not match.", "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            currentUser.setPassword(newPwd);
-            JOptionPane.showMessageDialog(outer, "Password updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+        Runnable calcTotal = () -> {
+            double charge = deliveryType.getSelectionModel().getSelectedIndex() == 0 ? 50 : 30;
+            double grandTotal = subtotal + charge;
+            totalLbl.setText("Grand Total: ₹" + String.format("%.2f", grandTotal));
+            totalLbl.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
             
-            curPwdField.setText("");
-            newPwdField.setText("");
-            confirmPwdField.setText("");
+            // Reset payment if total changes
+            isPaymentConfirmed = false;
+            updateUpiPanel(grandTotal);
+        };
+        deliveryType.setOnAction(e -> calcTotal.run());
+        calcTotal.run();
+
+        Label addrTitle = new Label("1. Manual Address Details");
+        addrTitle.setStyle("-fx-font-weight: bold; -fx-text-fill: #2d3748;");
+        GridPane addrGrid = new GridPane();
+        addrGrid.setHgap(8); addrGrid.setVgap(8);
+
+        TextField houseField = new TextField(); houseField.setPromptText("House/Flat No *");
+        TextField streetField = new TextField(); streetField.setPromptText("Street/Area *");
+        TextField landmarkField = new TextField(); landmarkField.setPromptText("Landmark (Optional)");
+        TextField cityField = new TextField(); cityField.setPromptText("City *");
+        TextField stateField = new TextField(); stateField.setPromptText("State *");
+        TextField pinField = new TextField(); pinField.setPromptText("Pincode *");
+
+        addrGrid.add(new Label("House:"), 0, 0); addrGrid.add(houseField, 1, 0);
+        addrGrid.add(new Label("Street:"), 0, 1); addrGrid.add(streetField, 1, 1);
+        addrGrid.add(new Label("Landmark:"), 0, 2); addrGrid.add(landmarkField, 1, 2);
+        addrGrid.add(new Label("City:"), 0, 3); addrGrid.add(cityField, 1, 3);
+        addrGrid.add(new Label("State:"), 0, 4); addrGrid.add(stateField, 1, 4);
+        addrGrid.add(new Label("Pincode:"), 0, 5); addrGrid.add(pinField, 1, 5);
+
+        Label mapTitle = new Label("2. Exact Map Location");
+        mapTitle.setStyle("-fx-font-weight: bold; -fx-text-fill: #2d3748; -fx-padding: 10 0 0 0;");
+        
+        Button openMapBtn = new Button("📍 Choose Delivery Point on Map");
+        openMapBtn.setMaxWidth(Double.MAX_VALUE);
+        openMapBtn.setStyle("-fx-background-color: #edf2f7; -fx-border-color: #cbd5e0; -fx-cursor: hand;");
+
+        Label mapStatus = new Label("No point selected on map");
+        mapStatus.setStyle("-fx-text-fill: #a0aec0; -fx-font-style: italic;");
+        mapStatus.setWrapText(true);
+
+        openMapBtn.setOnAction(e -> {
+            try {
+                LocationPickerServer server = new LocationPickerServer(res -> {
+                    Platform.runLater(() -> {
+                        validatedLat = res.lat;
+                        validatedLon = res.lon;
+                        validatedDisplayName = res.address;
+                        geocodeStatus = "SUCCESS";
+                        mapStatus.setText("✅ Confirmed: " + res.address);
+                        mapStatus.setStyle("-fx-text-fill: #38a169; -fx-font-weight: bold;");
+                    });
+                });
+                server.start();
+                CustomerMapGenerator.openPicker();
+            } catch (Exception ex) {
+                new Alert(Alert.AlertType.ERROR, "Failed to start map server: " + ex.getMessage()).show();
+            }
         });
 
-        return outer;
+        // Reset logic: if any field changes, we might want to re-validate map point 
+        // but for now we just show a warning
+        Runnable fieldChangeHandler = () -> {
+            if ("SUCCESS".equals(geocodeStatus)) {
+                mapStatus.setText("⚠️ Address modified - ensure map point still matches!");
+                mapStatus.setStyle("-fx-text-fill: #dd6b20;");
+            }
+        };
+
+        houseField.textProperty().addListener((o, old, n) -> fieldChangeHandler.run());
+        streetField.textProperty().addListener((o, old, n) -> fieldChangeHandler.run());
+        cityField.textProperty().addListener((o, old, n) -> fieldChangeHandler.run());
+
+        Button placeOrderBtn = new Button("Confirm & Place Order");
+        placeOrderBtn.getStyleClass().add("btn-place-order");
+        placeOrderBtn.setMaxWidth(Double.MAX_VALUE);
+        placeOrderBtn.setStyle("-fx-font-size: 16px; -fx-padding: 12; -fx-background-color: #3182ce; -fx-text-fill: white;");
+
+        // UPI Payment Section
+        VBox upiSection = createUpiSection(subtotal + (deliveryType.getSelectionModel().getSelectedIndex() == 0 ? 50 : 30));
+
+        placeOrderBtn.setOnAction(e -> {
+            // Validate Manual Fields
+            if (houseField.getText().isEmpty() || streetField.getText().isEmpty() || cityField.getText().isEmpty() || pinField.getText().isEmpty()) {
+                new Alert(Alert.AlertType.WARNING, "Please fill all mandatory address fields (*)").show();
+                return;
+            }
+            if (!pinField.getText().matches("\\d{6}")) {
+                new Alert(Alert.AlertType.WARNING, "Please enter a valid 6-digit Pincode").show();
+                return;
+            }
+            // Validate Map Confirmation
+            if (!"SUCCESS".equals(geocodeStatus)) {
+                new Alert(Alert.AlertType.WARNING, "Please confirm your exact delivery point on the map.").show();
+                return;
+            }
+            
+            // NEW: Validate Payment
+            if (!isPaymentConfirmed) {
+                new Alert(Alert.AlertType.WARNING, "Please complete the UPI payment and click 'I Have Paid' before placing the order.").show();
+                return;
+            }
+
+            String fullAddr = houseField.getText() + ", " + streetField.getText() + ", " + landmarkField.getText() + ", " + cityField.getText() + ", " + stateField.getText() + " - " + pinField.getText();
+            String orderId = "ORD-" + System.currentTimeMillis();
+            double charge = deliveryType.getSelectionModel().getSelectedIndex() == 0 ? 50 : 30;
+            String delType = deliveryType.getValue().contains("Same") ? "Same Day" : "Next Day";
+
+            Order newOrder = new Order(customer.getId(), orderId, java.time.LocalDate.now().toString(), "Pending",
+                    subtotal + charge, delType, fullAddr, "UPI");
+            newOrder.setCustomerEmail(customer.getEmail());
+            newOrder.setHouseFlatNo(houseField.getText());
+            newOrder.setStreetArea(streetField.getText());
+            newOrder.setLandmark(landmarkField.getText());
+            newOrder.setCity(cityField.getText());
+            newOrder.setState(stateField.getText());
+            newOrder.setPincode(pinField.getText());
+            newOrder.setFullAddress(fullAddr);
+            newOrder.setLatitude(validatedLat);
+            newOrder.setLongitude(validatedLon);
+            newOrder.setGeocodedDisplayName(validatedDisplayName);
+            newOrder.setGeocodeStatus("SUCCESS");
+
+            OrderDAO dao = new OrderDAO();
+            if (dao.placeOrder(newOrder, new java.util.ArrayList<>(cartItems))) {
+                new Alert(Alert.AlertType.INFORMATION, "Order Placed Successfully!").show();
+                cartItems.clear();
+                cartCount = 0;
+                cartLabel.setText("Cart (0)");
+                isPaymentConfirmed = false;
+                placeOrderBtn.setDisable(true);
+                switchPanel("Orders");
+            } else {
+                String error = OrderDAO.getLastErrorMessage();
+                new Alert(Alert.AlertType.ERROR, "Order Placement Failed\n\nReason: " + error).show();
+            }
+        });
+
+        summary.getChildren().addAll(new Label("Order Summary"), subLbl, new Label("Delivery:"), deliveryType, totalLbl,
+                new Separator(), addrTitle, addrGrid, new Separator(), mapTitle, openMapBtn, mapStatus, new Separator(), upiSection, placeOrderBtn);
+        
+        ScrollPane summaryScroll = new ScrollPane(summary);
+        summaryScroll.setFitToWidth(true);
+        summaryScroll.setPrefWidth(370); // Slightly wider than summary to prevent horizontal scroll
+        panel.setRight(summaryScroll);
+    }
+
+    private Label upiStatusLabel;
+    private void updateUpiPanel(double total) {
+        if (upiStatusLabel != null) {
+            upiStatusLabel.setText("🕒 Waiting for Payment...");
+            upiStatusLabel.setStyle("-fx-text-fill: #718096;");
+        }
+        String upiLink = String.format("upi://pay?pa=%s&pn=%s&am=%.2f&cu=INR&tn=Order_%s", 
+            Config.MERCHANT_UPI_ID, Config.MERCHANT_NAME.replace(" ", "%20"), total, currentOrderIdForUpi);
+        String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + upiLink;
+        qrView.setImage(new javafx.scene.image.Image(qrUrl, true));
+    }
+
+    private VBox createUpiSection(double total) {
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(15));
+        box.setStyle("-fx-background-color: #f7fafc; -fx-border-color: #e2e8f0; -fx-border-radius: 8;");
+        box.setAlignment(Pos.CENTER);
+
+        Label title = new Label("UPI Payment (ONLY)");
+        title.setStyle("-fx-font-weight: bold; -fx-text-fill: #2d3748;");
+
+        Label merchant = new Label(Config.MERCHANT_NAME);
+        merchant.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #3182ce;");
+
+        Label upiId = new Label(Config.MERCHANT_UPI_ID);
+        upiId.setStyle("-fx-font-family: 'Consolas'; -fx-text-fill: #4a5568;");
+
+        qrView.setFitWidth(140);
+        qrView.setFitHeight(140);
+        
+        upiStatusLabel = new Label("🕒 Waiting for Payment...");
+        upiStatusLabel.setStyle("-fx-text-fill: #718096; -fx-font-style: italic;");
+
+        Button confirmPayBtn = new Button("I Have Paid");
+        confirmPayBtn.setMaxWidth(Double.MAX_VALUE);
+        confirmPayBtn.setStyle("-fx-background-color: #48bb78; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        
+        confirmPayBtn.setOnAction(e -> {
+            isPaymentConfirmed = true;
+            upiStatusLabel.setText("✅ Payment Confirmed");
+            upiStatusLabel.setStyle("-fx-text-fill: #2f855a; -fx-font-weight: bold;");
+            new Alert(Alert.AlertType.INFORMATION, "Payment simulation successful! You can now place the order.").show();
+        });
+
+        box.getChildren().addAll(title, merchant, upiId, qrView, upiStatusLabel, confirmPayBtn);
+        updateUpiPanel(total);
+        return box;
+    }
+
+    private void loadInteractiveMap(WebEngine engine, TextField addressField, Label statusLabel) {
+        String html = "<!DOCTYPE html><html><head>" +
+                "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' />" +
+                "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>" +
+                "<style>" +
+                "  html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; }" +
+                "  #map { cursor: crosshair; background: #f8f9fa; }" +
+                "</style></head><body>" +
+                "<div id='map'></div><script>" +
+                "var map = L.map('map', {zoomControl: true}).setView([18.5204, 73.8567], 12);" +
+                "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);" +
+                "var marker;" +
+                "function updatePick(lat, lng) {" +
+                "  if(marker) map.removeLayer(marker);" +
+                "  marker = L.marker([lat, lng]).addTo(map);" +
+                "  alert('MAP_PICK:' + lat + ',' + lng);" +
+                "}" +
+                "map.on('click', function(e) { updatePick(e.latlng.lat, e.latlng.lng); });" +
+                "// Critical fix for WebView distortion: call invalidateSize multiple times\n" +
+                "window.onload = function() {" +
+                "  setTimeout(function(){ map.invalidateSize(); }, 200);" +
+                "  setTimeout(function(){ map.invalidateSize(); }, 1000);" +
+                "};" +
+                "// Try to get user location\n" +
+                "if (navigator.geolocation) {" +
+                "  navigator.geolocation.getCurrentPosition(function(position) {" +
+                "    var pos = [position.coords.latitude, position.coords.longitude];" +
+                "    map.setView(pos, 15);" +
+                "    updatePick(pos[0], pos[1]);" +
+                "  });" +
+                "}" +
+                "</script></body></html>";
+
+        engine.setOnAlert(event -> {
+            String data = event.getData();
+            if (data.startsWith("MAP_PICK:")) {
+                String[] coords = data.substring(9).split(",");
+                validatedLat = Double.parseDouble(coords[0]);
+                validatedLon = Double.parseDouble(coords[1]);
+                Platform.runLater(() -> {
+                    addressField.setText("Lat: " + String.format("%.4f", validatedLat) + ", Lon: "
+                            + String.format("%.4f", validatedLon));
+                    statusLabel.setText("✅ Location Picked from Map");
+                    statusLabel.setStyle("-fx-text-fill: green;");
+                });
+            }
+        });
+
+        engine.loadContent(html);
+    }
+
+    // --- Customer Orders History Migration ---
+    private BorderPane createOrdersHistoryPanel() {
+        BorderPane panel = new BorderPane();
+        panel.setPadding(new Insets(15));
+        HBox header = new HBox(15);
+        Label title = new Label("Order History");
+        title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+
+        Button allBtn = new Button("All History");
+        Button todayBtn = new Button("Today Only");
+
+        header.getChildren().addAll(title, new Region(), allBtn, todayBtn);
+        HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+        panel.setTop(header);
+
+        TableView<Order> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Order, String> colId = new TableColumn<>("Order ID");
+        colId.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("orderId"));
+        TableColumn<Order, String> colDate = new TableColumn<>("Date");
+        colDate.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("date"));
+        TableColumn<Order, String> colStatus = new TableColumn<>("Status");
+        colStatus.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("status"));
+        TableColumn<Order, Double> colTotal = new TableColumn<>("Total ₹");
+        colTotal.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("total"));
+
+        table.getColumns().addAll(colId, colDate, colStatus, colTotal);
+
+        OrderDAO dao = new OrderDAO();
+        table.setItems(javafx.collections.FXCollections
+                .observableArrayList(dao.getOrdersByCustomerEmail(customer.getEmail())));
+
+        allBtn.setOnAction(e -> table.setItems(javafx.collections.FXCollections
+                .observableArrayList(dao.getOrdersByCustomerEmail(customer.getEmail()))));
+        todayBtn.setOnAction(e -> table.setItems(javafx.collections.FXCollections
+                .observableArrayList(dao.getTodaysOrdersForCustomer(customer.getEmail()))));
+
+        table.setRowFactory(tv -> {
+            TableRow<Order> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && (!row.isEmpty()))
+                    showOrderDetails(row.getItem());
+            });
+            return row;
+        });
+
+        panel.setCenter(table);
+        return panel;
+    }
+
+    private void showOrderDetails(Order o) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Order Reference: " + o.getOrderId());
+        dialog.setHeaderText(null);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(20);
+        grid.setVgap(15);
+        grid.setPadding(new Insets(25));
+        grid.setPrefWidth(500);
+
+        Label title = new Label("Order Information");
+        title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+        grid.add(title, 0, 0, 2, 1);
+
+        grid.add(new Label("Order ID:"), 0, 1);
+        Label idVal = new Label(o.getOrderId());
+        idVal.setStyle("-fx-font-weight: bold;");
+        grid.add(idVal, 1, 1);
+
+        grid.add(new Label("Date:"), 0, 2);
+        grid.add(new Label(o.getDate()), 1, 2);
+
+        Label itemsLbl = new Label("Items Purchased:");
+        grid.add(itemsLbl, 0, 3);
+
+        // Requirements: Load actual DB items for the dialog
+        java.util.List<OrderItem> liveItems = new OrderDAO().getOrderItemsByOrderId(o.getOrderId());
+        StringBuilder liveSummary = new StringBuilder();
+        for (OrderItem oi : liveItems) {
+            if (liveSummary.length() > 0)
+                liveSummary.append("\n");
+            liveSummary.append("• ").append(oi.getProduct().getName()).append(" x").append(oi.qty);
+        }
+
+        Label itemsVal = new Label(liveSummary.length() > 0 ? liveSummary.toString() : "No items found");
+        itemsVal.setWrapText(true);
+        itemsVal.setMaxWidth(300);
+        itemsVal.setStyle(
+                "-fx-background-color: #f7fafc; -fx-padding: 10; -fx-border-color: #edf2f7; -fx-font-family: 'Consolas';");
+        grid.add(itemsVal, 1, 3);
+
+        grid.add(new Label("Shipping Address:"), 0, 4);
+        Label addrVal = new Label(o.getAddress());
+        addrVal.setWrapText(true);
+        addrVal.setMaxWidth(300);
+        grid.add(addrVal, 1, 4);
+
+        grid.add(new Label("Method:"), 0, 5);
+        grid.add(new Label(o.getPaymentMethod() + " (UPI)"), 1, 5);
+
+        grid.add(new Label("Order Status:"), 0, 6);
+        Label statusVal = new Label(o.getStatus());
+        statusVal.setStyle("-fx-font-weight: bold; -fx-text-fill: #2b6cb0;");
+        grid.add(statusVal, 1, 6);
+
+        // NEW: Show ETA if assigned
+        DeliveryAssignmentDAO assignmentDao = new DeliveryAssignmentDAO();
+        DeliveryAssignment assignment = assignmentDao.getAssignmentByOrderId(o.getOrderId());
+        if (assignment != null) {
+            grid.add(new Label("Delivery ETA:"), 0, 7);
+            Label etaVal = new Label(assignment.getEtaMinutes() + " mins from dispatch");
+            etaVal.setStyle("-fx-font-weight: bold; -fx-text-fill: #38a169;");
+            grid.add(etaVal, 1, 7);
+            
+            grid.add(new Label("Delivery Status:"), 0, 8);
+            grid.add(new Label(assignment.getStatus()), 1, 8);
+        }
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        dialog.showAndWait();
+    }
+
+    // --- Customer Profile Migration ---
+    private VBox createProfilePanel() {
+        VBox panel = new VBox(25);
+        panel.setPadding(new Insets(20));
+        panel.setAlignment(Pos.TOP_CENTER);
+        panel.setMaxWidth(500);
+
+        Label title = new Label("Account Settings");
+        title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+
+        CustomerDAO dao = new CustomerDAO();
+        Customer c = dao.getCustomerById(customer.getId());
+
+        // 1. Details Section
+        GridPane details = new GridPane();
+        details.setHgap(15);
+        details.setVgap(15);
+        details.setPadding(new Insets(20));
+        details.getStyleClass().add("profile-card");
+
+        details.add(new Label("Full Name:"), 0, 0);
+        Label nameVal = new Label(c != null ? c.getName() : "N/A");
+        nameVal.setStyle("-fx-font-weight: bold;");
+        details.add(nameVal, 1, 0);
+
+        details.add(new Label("Email Address:"), 0, 1);
+        Label emailVal = new Label(c != null ? c.getEmail() : "N/A");
+        emailVal.setStyle("-fx-font-weight: bold; -fx-text-fill: #718096;");
+        details.add(emailVal, 1, 1);
+
+        details.add(new Label("Phone Number:"), 0, 2);
+        Label phoneVal = new Label(c != null ? c.getPhone() : "N/A");
+        phoneVal.setStyle("-fx-font-weight: bold;");
+        details.add(phoneVal, 1, 2);
+
+        // 2. Password Section
+        VBox passBox = new VBox(15);
+        passBox.setPadding(new Insets(20));
+        passBox.getStyleClass().add("profile-card");
+
+        Label passTitle = new Label("Change Password");
+        passTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
+
+        PasswordField currentPass = new PasswordField();
+        currentPass.setPromptText("Current Password");
+        PasswordField newPass = new PasswordField();
+        newPass.setPromptText("New Password");
+        PasswordField confirmPass = new PasswordField();
+        confirmPass.setPromptText("Confirm New Password");
+
+        Button updateBtn = new Button("Update Password");
+        updateBtn.getStyleClass().add("btn-update-pass");
+        updateBtn.setMaxWidth(Double.MAX_VALUE);
+
+        updateBtn.setOnAction(e -> {
+            String cur = currentPass.getText();
+            String n1 = newPass.getText();
+            String n2 = confirmPass.getText();
+
+            // Refresh customer data to verify latest password
+            Customer currentDbData = dao.getCustomerById(customer.getId());
+
+            if (currentDbData == null) {
+                new Alert(Alert.AlertType.ERROR, "Error loading account data.").show();
+            } else if (!cur.equals(currentDbData.getPassword())) {
+                new Alert(Alert.AlertType.ERROR, "Incorrect current password!").show();
+            } else if (n1.isEmpty() || n1.length() < 4) {
+                new Alert(Alert.AlertType.ERROR, "New password must be at least 4 characters.").show();
+            } else if (!n1.equals(n2)) {
+                new Alert(Alert.AlertType.ERROR, "New passwords do not match!").show();
+            } else {
+                if (dao.updatePassword(customer.getId(), cur, n1)) {
+                    new Alert(Alert.AlertType.INFORMATION, "Password updated successfully!").show();
+                    currentPass.clear();
+                    newPass.clear();
+                    confirmPass.clear();
+                }
+            }
+        });
+
+        passBox.getChildren().addAll(passTitle, currentPass, newPass, confirmPass, updateBtn);
+
+        panel.getChildren().addAll(title, details, passBox);
+        return panel;
+    }
+
+    private void handleLogout() {
+        stage.close();
+        Platform.runLater(() -> {
+            try {
+                new SuperMartMain().start(new Stage());
+            } catch (Exception ex) {
+            }
+        });
+    }
+
+    public void startApp() {
+        Platform.runLater(() -> {
+            try {
+                start(new Stage());
+            } catch (Exception e) {
+            }
+        });
+    }
+
+    public static void main(String[] args) {
+        launch(args);
     }
 }
-
