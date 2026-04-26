@@ -35,16 +35,19 @@ public class DeliveryDashboard extends Application {
 
         // 1. TOP area: Header
         HBox header = new HBox();
-        header.getStyleClass().add("admin-header");
-        header.setPadding(new Insets(15, 20, 15, 20));
+        header.getStyleClass().add("header-panel");
         header.setAlignment(Pos.CENTER_LEFT);
         
-        Label welcome = new Label("Delivery Agent: " + agent.getFullName());
-        welcome.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        VBox titleBox = new VBox(2);
+        Label welcome = new Label("SuperMart Delivery");
+        welcome.getStyleClass().add("header-title");
+        Label agentLabel = new Label("Agent: " + agent.getFullName());
+        agentLabel.getStyleClass().add("header-subtitle");
+        titleBox.getChildren().addAll(welcome, agentLabel);
         
         bellBtn = NotificationUI.createNotificationBell(Notification.UserType.DELIVERY_GUY, agent.getEmail());
         
-        header.getChildren().addAll(welcome, new Region(), bellBtn);
+        header.getChildren().addAll(titleBox, new Region(), bellBtn);
         HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
         root.setTop(header);
 
@@ -52,17 +55,19 @@ public class DeliveryDashboard extends Application {
         setupNotifications();
 
         // 2. LEFT area: Sidebar
-        VBox sidebar = new VBox(10);
-        sidebar.getStyleClass().add("admin-sidebar");
-        sidebar.setPrefWidth(210);
-        sidebar.setPadding(new Insets(20, 10, 20, 10));
+        VBox sidebar = new VBox(5);
+        sidebar.getStyleClass().add("sidebar");
+        sidebar.setPrefWidth(240);
+
+        Label navLabel = new Label("LOGISTICS NAV");
+        navLabel.setStyle("-fx-text-fill: #37B7C3; -fx-font-size: 11px; -fx-font-weight: bold; -fx-padding: 10 20 10 20;");
+        sidebar.getChildren().add(navLabel);
 
         String[] navButtons = {
                 "Assigned Orders",
                 "Same Day Map",
                 "Next Day Map",
                 "Route Summary",
-                "Notifications",
                 "Profile",
                 "Logout"
         };
@@ -71,12 +76,13 @@ public class DeliveryDashboard extends Application {
             Button btn = new Button(name);
             btn.getStyleClass().add("sidebar-btn");
             btn.setMaxWidth(Double.MAX_VALUE);
-            btn.setAlignment(Pos.CENTER_LEFT);
             btn.setOnAction(e -> {
                 if (name.equals("Logout")) {
                     handleLogout();
                 } else {
                     switchCenterContent(name);
+                    sidebar.getChildren().forEach(node -> node.getStyleClass().remove("active"));
+                    btn.getStyleClass().add("active");
                 }
             });
             sidebar.getChildren().add(btn);
@@ -85,13 +91,13 @@ public class DeliveryDashboard extends Application {
 
         // 3. CENTER area: Content Area
         contentArea = new StackPane();
-        contentArea.setPadding(new Insets(25));
         switchCenterContent("Assigned Orders");
         root.setCenter(contentArea);
 
-        Scene scene = new Scene(root, 1000, 700);
-        scene.getStylesheets().add(getClass().getResource("admin_dashboard.css").toExternalForm());
+        Scene scene = new Scene(root, 1200, 850);
+        scene.getStylesheets().add(getClass().getResource("style.css").toExternalForm());
         stage.setScene(scene);
+        stage.setMaximized(true);
         stage.show();
     }
 
@@ -122,54 +128,50 @@ public class DeliveryDashboard extends Application {
         }
     }
 
-    private BorderPane createMapPanel(String type) {
-        BorderPane panel = new BorderPane();
-        panel.setPadding(new Insets(20));
+    private ScrollPane createMapPanel(String type) {
+        VBox mainContainer = new VBox(25);
+        mainContainer.setPadding(new Insets(40));
+        mainContainer.getStyleClass().add("card-panel");
+        mainContainer.setAlignment(Pos.CENTER);
+
+        Label title = new Label(type + " Route Logistics");
+        title.getStyleClass().add("section-title");
         
-        VBox center = new VBox(20);
-        center.setAlignment(Pos.CENTER);
+        Label info = new Label("Visualize your " + type + " delivery sequence on the interactive map.");
+        info.getStyleClass().add("header-subtitle");
         
-        Label title = new Label(type + " Route Viewer");
-        title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+        Button launchBtn = new Button("Launch Interactive Map");
+        launchBtn.setPrefSize(300, 50);
         
-        Label info = new Label("Click below to open the " + type + " delivery route in a full-size window.");
-        info.setStyle("-fx-text-fill: gray;");
-        
-        Button launchBtn = new Button("Open " + type + " Map");
-        launchBtn.setPrefSize(250, 60);
-        launchBtn.setStyle("-fx-background-color: #3182ce; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16px; -fx-cursor: hand;");
-        
-        Button testBtn = new Button("DEBUG: Test Browser (Open Google)");
-        testBtn.setOnAction(e -> {
-            System.out.println("[DEBUG] Delivery Test Browser button clicked");
-            try {
-                java.awt.Desktop.getDesktop().browse(new java.net.URI("https://www.google.com"));
-            } catch (Exception ex) { ex.printStackTrace(); }
-        });
-        
-        center.getChildren().addAll(title, info, launchBtn, testBtn);
-        panel.setCenter(center);
+        mainContainer.getChildren().addAll(title, info, launchBtn);
 
         launchBtn.setOnAction(e -> {
-            OrderDAO orderDao = new OrderDAO();
-            String activeDate = orderDao.getEarliestPendingDeliveryDateForAgent(agent.getAgentId(), type);
-            
-            if (activeDate == null) {
-                new Alert(Alert.AlertType.INFORMATION, "No undelivered " + type + " assignments found.").show();
-                return;
-            }
+            new Thread(() -> {
+                OrderDAO orderDao = new OrderDAO();
+                String activeDate = orderDao.getEarliestPendingDeliveryDateForAgent(agent.getAgentId(), type);
+                
+                if (activeDate == null) {
+                    javafx.application.Platform.runLater(() -> 
+                        new Alert(Alert.AlertType.INFORMATION, "No undelivered " + type + " assignments found.").show());
+                    return;
+                }
 
-            List<Order> orders = orderDao.getOrdersForRouteBatchByAgent(agent.getAgentId(), type, activeDate);
-            
-            if (orders.isEmpty()) {
-                new Alert(Alert.AlertType.INFORMATION, "No orders with valid coordinates in batch " + activeDate).show();
-                return;
-            }
-            
-            RouteMapLauncher.openRouteMapInBrowser(orders, "Delivery Agent: " + agent.getFullName(), type + " Batch: " + activeDate);
+                List<Order> orders = orderDao.getOrdersForRouteBatchByAgent(agent.getAgentId(), type, activeDate);
+                
+                if (orders.isEmpty()) {
+                    javafx.application.Platform.runLater(() -> 
+                        new Alert(Alert.AlertType.INFORMATION, "No orders with valid coordinates in batch " + activeDate).show());
+                    return;
+                }
+                
+                RouteMapLauncher.openRouteMapInBrowser(orders, "Delivery Agent: " + agent.getFullName(), type + " Batch: " + activeDate);
+            }).start();
         });
 
-        return panel;
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
     }
 
     private BorderPane createRouteSummaryPanel() {
@@ -221,23 +223,25 @@ public class DeliveryDashboard extends Application {
         return panel;
     }
 
-    private BorderPane createAssignedOrdersPanel(String filterType) {
-        BorderPane panel = new BorderPane();
-        panel.setPadding(new Insets(10));
+    private ScrollPane createAssignedOrdersPanel(String filterType) {
+        VBox mainContainer = new VBox(20);
+        mainContainer.setPadding(new Insets(30));
+        mainContainer.getStyleClass().add("card-panel");
 
         OrderDAO orderDao = new OrderDAO();
         String activeSameDay = orderDao.getEarliestPendingDeliveryDateForAgent(agent.getAgentId(), "Same Day");
         String activeNextDay = orderDao.getEarliestPendingDeliveryDateForAgent(agent.getAgentId(), "Next Day");
         
-        Label title = new Label("Active Delivery Batches");
-        title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+        Label title = new Label("Active Delivery Assignments");
+        title.getStyleClass().add("section-title");
         
-        Label subTitle = new Label(String.format("Same Day: %s | Next Day: %s", 
+        Label subTitle = new Label(String.format("Batch Status: Same Day (%s) | Next Day (%s)", 
             (activeSameDay != null ? activeSameDay : "None"), 
             (activeNextDay != null ? activeNextDay : "None")));
-        subTitle.setStyle("-fx-font-size: 14px; -fx-text-fill: #4a5568;");
+        subTitle.getStyleClass().add("header-subtitle");
+        subTitle.setStyle("-fx-text-fill: #718096;");
 
-        panel.setTop(new VBox(10, title, subTitle));
+        mainContainer.getChildren().addAll(title, subTitle);
 
         TableView<DeliveryAssignment> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
@@ -285,9 +289,13 @@ public class DeliveryDashboard extends Application {
         table.getColumns().addAll(colOrderId, colCust, colAddr, colEta, colStatus, colActions);
 
         refreshTableData(table, filterType);
-        panel.setCenter(table);
+        mainContainer.getChildren().add(table);
+        VBox.setVgrow(table, Priority.ALWAYS);
 
-        return panel;
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
     }
 
     private void refreshTableData(TableView<DeliveryAssignment> table, String filterType) {

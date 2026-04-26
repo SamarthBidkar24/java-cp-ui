@@ -55,13 +55,18 @@ public class DirectionsService {
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
 
-            // Construct JSON: {"coordinates": [[lon,lat], ...]}
             StringBuilder body = new StringBuilder("{\"coordinates\":[");
             for (int i = 0; i < waypoints.size(); i++) {
                 body.append("[").append(waypoints.get(i)[0]).append(",").append(waypoints.get(i)[1]).append("]");
                 if (i < waypoints.size() - 1) body.append(",");
             }
+            body.append("],\"radiuses\":[");
+            for (int i = 0; i < waypoints.size(); i++) {
+                body.append("-1");
+                if (i < waypoints.size() - 1) body.append(",");
+            }
             body.append("]}");
+
 
             // LOG REQUEST
             System.out.println("URL: " + DIRECTIONS_URL);

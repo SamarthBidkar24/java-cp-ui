@@ -14,8 +14,8 @@ import java.util.List;
  */
 public class RouteMapWindow {
 
-    private static double shopLat = 18.5204;
-    private static double shopLon = 73.8567;
+    private static double shopLat = Config.SHOP_LAT;
+    private static double shopLon = Config.SHOP_LON;
 
     public static void show(String title, List<Order> orders, String routeGeoJson) {
         Stage stage = new Stage();
@@ -45,6 +45,7 @@ public class RouteMapWindow {
 
         Scene scene = new Scene(root, 1100, 800);
         stage.setScene(scene);
+        stage.setMaximized(true);
         stage.show();
 
         // Load content
@@ -64,10 +65,7 @@ public class RouteMapWindow {
         statusLabel.setText("Optimizing stops...");
         new Thread(() -> {
             // Locate shop if possible
-            double[] loc = GeocodingService.getIPLocation();
-            if (loc != null) {
-                shopLat = loc[0]; shopLon = loc[1];
-            }
+            // Removed IP override to strictly use Config.SHOP_LAT/LON
 
             List<Order> optimized = new RoutePlanner().optimizeSequence(orders, shopLat, shopLon);
             

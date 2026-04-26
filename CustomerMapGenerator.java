@@ -35,7 +35,7 @@ public class CustomerMapGenerator {
                 "  <button id='confirmBtn' class='btn btn-primary' disabled onclick='confirmLocation()'>Confirm This Point</button>" +
                 "</div>" +
                 "<script>" +
-                "var map = L.map('map').setView([18.5204, 73.8567], 13);" +
+                "var map = L.map('map').setView([" + Config.SHOP_LAT + ", " + Config.SHOP_LON + "], 13);" +
                 "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);" +
                 "var marker; var selectedLat, selectedLon, selectedAddr;" +
                 "var apiKey = '" + Config.ORS_API_KEY + "';" +
@@ -69,7 +69,17 @@ public class CustomerMapGenerator {
                 out.println(html);
             }
 
-            Desktop.getDesktop().browse(tempFile.toURI());
-        } catch (Exception e) { e.printStackTrace(); }
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(tempFile.toURI());
+            } else {
+                javafx.application.Platform.runLater(() -> 
+                    new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING, "Browser not supported. Please open manually: " + tempFile.getAbsolutePath()).show());
+            }
+        } catch (Exception e) { 
+            e.printStackTrace(); 
+            String msg = e.getMessage();
+            javafx.application.Platform.runLater(() -> 
+                new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR, "Failed to open map picker: " + msg).show());
+        }
     }
 }

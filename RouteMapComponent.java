@@ -14,8 +14,8 @@ public class RouteMapComponent extends VBox {
 
     private final WebView webView = new WebView();
     private final Label statusLabel = new Label("Ready to load map...");
-    private double shopLat = 18.5204;
-    private double shopLon = 73.8567;
+    private double shopLat = Config.SHOP_LAT;
+    private double shopLon = Config.SHOP_LON;
 
     public RouteMapComponent() {
         this.setSpacing(10);
@@ -31,13 +31,7 @@ public class RouteMapComponent extends VBox {
         this.getChildren().addAll(controls, webView);
         
         // Auto-locate shop
-        new Thread(() -> {
-            double[] loc = GeocodingService.getIPLocation();
-            if (loc != null) {
-                shopLat = loc[0]; shopLon = loc[1];
-                Platform.runLater(() -> statusLabel.setText("✅ Location: " + shopLat + ", " + shopLon));
-            }
-        }).start();
+        // Removed IP override to strictly use Config.SHOP_LAT/LON
     }
 
     public void loadRoute(List<Order> orders, String routeGeoJson) {

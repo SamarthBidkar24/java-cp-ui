@@ -47,15 +47,19 @@ public class AdminDashboard extends Application {
 
         // 1. TOP area: Header
         HBox header = new HBox();
-        header.getStyleClass().add("admin-header");
-        header.setPadding(new Insets(15, 20, 15, 20));
+        header.getStyleClass().add("header-panel");
         header.setAlignment(Pos.CENTER_LEFT);
-        Label welcome = new Label("Logged in as: " + (adminEmail != null ? adminEmail : "Admin"));
-        welcome.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        
+        VBox titleBox = new VBox(2);
+        Label welcome = new Label("SuperMart Admin");
+        welcome.getStyleClass().add("header-title");
+        Label emailLabel = new Label("Logged in as: " + (adminEmail != null ? adminEmail : "Admin"));
+        emailLabel.getStyleClass().add("header-subtitle");
+        titleBox.getChildren().addAll(welcome, emailLabel);
         
         bellBtn = NotificationUI.createNotificationBell(Notification.UserType.ADMIN, "admin");
         
-        header.getChildren().addAll(welcome, new Region(), bellBtn);
+        header.getChildren().addAll(titleBox, new Region(), bellBtn);
         HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
         
         root.setTop(header);
@@ -64,10 +68,13 @@ public class AdminDashboard extends Application {
         setupNotifications();
 
         // 2. LEFT area: Sidebar
-        VBox sidebar = new VBox(10);
-        sidebar.getStyleClass().add("admin-sidebar");
-        sidebar.setPrefWidth(210);
-        sidebar.setPadding(new Insets(20, 10, 20, 10));
+        VBox sidebar = new VBox(5);
+        sidebar.getStyleClass().add("sidebar");
+        sidebar.setPrefWidth(240);
+
+        Label navLabel = new Label("NAVIGATION");
+        navLabel.setStyle("-fx-text-fill: #37B7C3; -fx-font-size: 11px; -fx-font-weight: bold; -fx-padding: 10 20 10 20;");
+        sidebar.getChildren().add(navLabel);
 
         String[] navButtons = {
                 "Inventory",
@@ -83,12 +90,14 @@ public class AdminDashboard extends Application {
             Button btn = new Button(name);
             btn.getStyleClass().add("sidebar-btn");
             btn.setMaxWidth(Double.MAX_VALUE);
-            btn.setAlignment(Pos.CENTER_LEFT);
             btn.setOnAction(e -> {
                 if (name.equals("Logout")) {
                     handleLogout();
                 } else {
                     switchCenterContent(name);
+                    // Update active state
+                    sidebar.getChildren().forEach(node -> node.getStyleClass().remove("active"));
+                    btn.getStyleClass().add("active");
                 }
             });
             sidebar.getChildren().add(btn);
@@ -103,28 +112,31 @@ public class AdminDashboard extends Application {
         root.setCenter(contentArea);
 
         // 4. BOTTOM area: Status/Info Bar
-        BorderPane statusBar = new BorderPane();
-        statusBar.getStyleClass().add("admin-status-bar");
-        statusBar.setPadding(new Insets(10, 20, 10, 20));
+        HBox statusBar = new HBox(20);
+        statusBar.setStyle("-fx-background-color: white; -fx-border-color: #E2E8F0 transparent transparent transparent; -fx-padding: 10 25 10 25;");
+        statusBar.setAlignment(Pos.CENTER_LEFT);
 
         statsLabel = new Label("Total Orders Today: 0 | Revenue: ₹0");
-        statsLabel.setStyle("-fx-font-weight: bold;");
-        statusBar.setLeft(statsLabel);
+        statsLabel.setStyle("-fx-text-fill: #4A5568; -fx-font-weight: bold;");
+        
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button refreshBtn = new Button("Refresh");
+        Button refreshBtn = new Button("Refresh Data");
+        refreshBtn.getStyleClass().add("button-secondary");
         refreshBtn.setOnAction(e -> {
             refreshDashboardStats();
-            new Alert(Alert.AlertType.INFORMATION, "Data Refreshed.").show();
         });
-        statusBar.setRight(refreshBtn);
 
-        refreshDashboardStats(); // Initial load
+        statusBar.getChildren().addAll(statsLabel, spacer, refreshBtn);
+        refreshDashboardStats();
 
         root.setBottom(statusBar);
 
-        Scene scene = new Scene(root, 1000, 700);
-        scene.getStylesheets().add(getClass().getResource("admin_dashboard.css").toExternalForm());
+        Scene scene = new Scene(root, 1200, 850);
+        scene.getStylesheets().add(getClass().getResource("style.css").toExternalForm());
         stage.setScene(scene);
+        stage.setMaximized(true);
         stage.show();
     }
 
@@ -140,7 +152,9 @@ public class AdminDashboard extends Application {
 
     private void switchCenterContent(String panelName) {
         contentArea.getChildren().clear();
-        if (panelName.equals("Inventory")) {
+        if (panelName.equals("Admin Home")) {
+            contentArea.getChildren().add(createAdminHomePanel());
+        } else if (panelName.equals("Inventory")) {
             contentArea.getChildren().add(createInventoryPanel());
         } else if (panelName.equals("Same Day Deliveries")) {
             contentArea.getChildren().add(createOrdersPanel("Same Day"));
@@ -165,32 +179,123 @@ public class AdminDashboard extends Application {
         }
     }
 
+    private ScrollPane createAdminHomePanel() {
+        VBox mainContainer = new VBox(30);
+        mainContainer.setPadding(new Insets(40));
+        mainContainer.getStyleClass().add("card-panel");
+
+        // Welcome Section
+        VBox welcomeBox = new VBox(5);
+        Label welcomeTitle = new Label("Welcome back, Administrator");
+        welcomeTitle.setStyle("-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #071952;");
+        Label welcomeSub = new Label("Here is what's happening in SuperMart today.");
+        welcomeSub.getStyleClass().add("header-subtitle");
+        welcomeBox.getChildren().addAll(welcomeTitle, welcomeSub);
+
+        // Stats Row
+        HBox statsRow = new HBox(20);
+        statsRow.setAlignment(Pos.CENTER_LEFT);
+
+        ReportDAO reportDao = new ReportDAO();
+        java.util.Map<String, Object> metrics = reportDao.getMetricsForDate(java.time.LocalDate.now().toString());
+        
+        int totalOrders = (int) metrics.getOrDefault("total_orders", 0);
+        double totalRevenue = (double) metrics.getOrDefault("total_revenue", 0.0);
+        int pendingOrders = (int) metrics.getOrDefault("pending_count", 0);
+        
+        int totalProducts = new ProductDAO().getAllProducts().size();
+        int totalAgents = new DeliveryDAO().getAllAgents().size();
+
+        statsRow.getChildren().addAll(
+            createStatChip("Today's Orders", String.valueOf(totalOrders)),
+            createStatChip("Today's Revenue", String.format("₹%.0f", totalRevenue)),
+            createStatChip("Pending Deliveries", String.valueOf(pendingOrders)),
+            createStatChip("Active Agents", String.valueOf(totalAgents))
+        );
+
+        // Quick Actions Section
+        Label actionTitle = new Label("Quick Management");
+        actionTitle.getStyleClass().add("section-title");
+        actionTitle.setPadding(new Insets(20, 0, 0, 0));
+
+        FlowPane actions = new FlowPane(20, 20);
+        String[][] quickActions = {
+            {"Inventory", "Manage products and stock levels"},
+            {"Route Planner", "Optimize delivery assignments"},
+            {"Delivery Management", "Register and track agents"},
+            {"Daily Reports", "Analyze sales performance"}
+        };
+
+        for (String[] action : quickActions) {
+            VBox actionCard = new VBox(10);
+            actionCard.getStyleClass().add("stat-chip");
+            actionCard.setPrefSize(220, 120);
+            actionCard.setStyle(actionCard.getStyle() + "; -fx-cursor: hand;");
+            
+            Label title = new Label(action[0]);
+            title.setStyle("-fx-font-weight: bold; -fx-font-size: 16px; -fx-text-fill: #088395;");
+            Label desc = new Label(action[1]);
+            desc.setWrapText(true);
+            desc.setStyle("-fx-font-size: 12px; -fx-text-fill: #718096;");
+            
+            actionCard.getChildren().addAll(title, desc);
+            actionCard.setOnMouseClicked(e -> switchCenterContent(action[0]));
+            actions.getChildren().add(actionCard);
+        }
+
+        mainContainer.getChildren().addAll(welcomeBox, statsRow, actionTitle, actions);
+
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
+    }
+
+    private VBox createStatChip(String label, String value) {
+        VBox chip = new VBox(5);
+        chip.getStyleClass().add("stat-chip");
+        chip.setMinWidth(220);
+        chip.setPadding(new Insets(20));
+        
+        Label valLbl = new Label(value);
+        valLbl.getStyleClass().add("stat-value");
+        
+        Label labLbl = new Label(label);
+        labLbl.getStyleClass().add("stat-label");
+        
+        chip.getChildren().addAll(valLbl, labLbl);
+        return chip;
+    }
+
     // --- Inventory Panel Migration (Strict BorderPane implementation) ---
-    private BorderPane createInventoryPanel() {
-        BorderPane panel = new BorderPane();
-        panel.setPadding(new Insets(20));
+    private ScrollPane createInventoryPanel() {
+        VBox mainContainer = new VBox(20);
+        mainContainer.setPadding(new Insets(30));
+        mainContainer.getStyleClass().add("card-panel");
 
-        // 1. TOP area: Header + Controls
-        VBox topArea = new VBox(15);
-        topArea.setPadding(new Insets(0, 0, 15, 0));
-
+        // Header
         Label titleLabel = new Label("Inventory Management");
-        titleLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+        titleLabel.getStyleClass().add("section-title");
 
         HBox controlBox = new HBox(15);
         controlBox.setAlignment(Pos.CENTER_LEFT);
+        controlBox.setPadding(new Insets(0, 0, 10, 0));
 
         TextField searchField = new TextField();
-        searchField.setPromptText("Search by Name...");
-        searchField.setPrefWidth(220);
+        searchField.setPromptText("Search products...");
+        searchField.setPrefWidth(250);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
         Button addBtn = new Button("Add Product");
-        Button deleteBtn = new Button("Delete Selected");
+        Button deleteBtn = new Button("Delete");
+        deleteBtn.getStyleClass().add("button-danger");
         Button refreshBtn = new Button("Refresh");
+        refreshBtn.getStyleClass().add("button-secondary");
 
-        controlBox.getChildren().addAll(new Label("Search:"), searchField, addBtn, deleteBtn, refreshBtn);
-        topArea.getChildren().addAll(titleLabel, controlBox);
-        panel.setTop(topArea);
+        controlBox.getChildren().addAll(new Label("Filter:"), searchField, spacer, addBtn, deleteBtn, refreshBtn);
+        mainContainer.getChildren().addAll(titleLabel, controlBox);
 
         // 2. CENTER area: TableView
         TableView<Product> inventoryTable = new TableView<>();
@@ -237,7 +342,8 @@ public class AdminDashboard extends Application {
 
         inventoryTable.getColumns().addAll(colId, colImg, colName, colQty, colPrice, colCat);
         inventoryTable.setFixedCellSize(50);
-        panel.setCenter(inventoryTable);
+        mainContainer.getChildren().add(inventoryTable);
+        VBox.setVgrow(inventoryTable, Priority.ALWAYS);
 
         // Logic & Filtering
         ProductDAO dao = new ProductDAO();
@@ -270,10 +376,12 @@ public class AdminDashboard extends Application {
 
         refreshBtn.setOnAction(e -> {
             masterData.setAll(dao.getAllProducts());
-            new Alert(Alert.AlertType.INFORMATION, "Inventory Data Refreshed.").show();
         });
 
-        return panel;
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
     }
 
     private void showAddProductDialog(TableView<Product> table, javafx.collections.ObservableList<Product> dataList) {
@@ -352,23 +460,23 @@ public class AdminDashboard extends Application {
     }
 
     // --- Orders Panels Migration ---
-    private BorderPane createOrdersPanel(String temporalType) {
-        BorderPane panel = new BorderPane();
-        panel.setPadding(new Insets(20));
+    private ScrollPane createOrdersPanel(String temporalType) {
+        VBox mainContainer = new VBox(20);
+        mainContainer.setPadding(new Insets(30));
+        mainContainer.getStyleClass().add("card-panel");
 
-        VBox topArea = new VBox(10);
         OrderDAO dao = new OrderDAO();
         String activeDate = dao.getEarliestPendingDeliveryDate(temporalType);
         String displayDate = (activeDate != null) ? activeDate : "No Pending Orders";
         
-        Label titleLabel = new Label(temporalType + " - Active Batch: " + displayDate);
-        titleLabel.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #2d3748;");
+        Label titleLabel = new Label(temporalType + " Orders - Batch: " + displayDate);
+        titleLabel.getStyleClass().add("section-title");
         
         Label subLabel = new Label("Showing the earliest batch with undelivered orders as per business rules.");
-        subLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #718096;");
+        subLabel.getStyleClass().add("header-subtitle");
+        subLabel.setStyle("-fx-text-fill: #718096;");
         
-        topArea.getChildren().addAll(titleLabel, subLabel);
-        panel.setTop(topArea);
+        mainContainer.getChildren().addAll(titleLabel, subLabel);
 
         TableView<Order> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
@@ -460,8 +568,13 @@ public class AdminDashboard extends Application {
             return row;
         });
 
-        panel.setCenter(table);
-        return panel;
+        mainContainer.getChildren().add(table);
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
     }
 
     // --- Daily Reports Panel Migration ---
@@ -618,44 +731,38 @@ public class AdminDashboard extends Application {
     }
 
     // Bridge for Swing/Manual launch
-    private double shopLat = 18.5204;
-    private double shopLon = 73.8567;
+    private double shopLat = Config.SHOP_LAT;
+    private double shopLon = Config.SHOP_LON;
 
-    private BorderPane createRoutePlannerPanel() {
-        BorderPane panel = new BorderPane();
-        panel.setPadding(new Insets(15));
-        
-        Label title = new Label("External Delivery Route Planner");
-        title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
-        
-        Label shopStatus = new Label("Detecting shop location...");
-        shopStatus.setStyle("-fx-text-fill: gray;");
+    private ScrollPane createRoutePlannerPanel() {
+        VBox mainContainer = new VBox(25);
+        mainContainer.setPadding(new Insets(30));
+        mainContainer.getStyleClass().add("card-panel");
 
-        Button generateBtn = new Button("Optimize & Open Map");
+        Label title = new Label("Logistics & Route Optimization");
+        title.getStyleClass().add("section-title");
+        
+        Label shopStatus = new Label("Identifying shop location...");
+        shopStatus.getStyleClass().add("header-subtitle");
+
+        Button generateBtn = new Button("Optimize & Launch Map");
         generateBtn.getStyleClass().add("btn-primary");
+        generateBtn.setPrefHeight(40);
         
-        new Thread(() -> {
-            double[] loc = GeocodingService.getIPLocation();
-            if (loc != null) {
-                shopLat = loc[0]; shopLon = loc[1];
-                Platform.runLater(() -> shopStatus.setText("✅ Shop located via IP."));
-            }
-        }).start();
+        // Shop location is strictly taken from Config.java
+        shopStatus.setText("📍 Warehouse: Laxmi Road / Shaniwar Peth");
 
         ComboBox<String> typeCombo = new ComboBox<>(javafx.collections.FXCollections.observableArrayList("Same Day", "Next Day"));
-        typeCombo.getSelectionModel().select(1); // Default to Next Day
+        typeCombo.getSelectionModel().select(1);
         
         Label batchLabel = new Label("Active Batch: Detecting...");
-        batchLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #3182ce;");
+        batchLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #088395;");
 
-        HBox top = new HBox(15, new VBox(5, title, shopStatus, batchLabel), new Region(), new Label("Type:"), typeCombo, generateBtn);
-        HBox.setHgrow(top.getChildren().get(1), Priority.ALWAYS);
-        top.setAlignment(Pos.CENTER_LEFT);
-        panel.setTop(top);
+        HBox controls = new HBox(15, new VBox(5, title, shopStatus, batchLabel), new Region(), new Label("Delivery Type:"), typeCombo, generateBtn);
+        HBox.setHgrow(controls.getChildren().get(1), Priority.ALWAYS);
+        controls.setAlignment(Pos.CENTER_LEFT);
 
         OrderDAO orderDao = new OrderDAO();
-        
-        // Listener to update batch label
         java.util.function.Consumer<String> updateBatchLabel = (type) -> {
             String date = orderDao.getEarliestPendingDeliveryDate(type);
             batchLabel.setText("Active Batch: " + (date != null ? date : "No Pending Orders"));
@@ -665,7 +772,7 @@ public class AdminDashboard extends Application {
         updateBatchLabel.accept(typeCombo.getValue());
 
         routeTable = new TableView<>();
-        routeTable.setPrefHeight(250);
+        routeTable.setPrefHeight(400);
         routeTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         TableColumn<OrderRoute, Integer> colStop = new TableColumn<>("Stop");
         colStop.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("stop"));
@@ -677,28 +784,9 @@ public class AdminDashboard extends Application {
         colAddr.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("address"));
         routeTable.getColumns().addAll(colStop, colCustName, colPhone, colAddr);
 
-        VBox center = new VBox(20);
-        center.setAlignment(Pos.CENTER);
-        center.setPadding(new Insets(30));
-        
-        Label infoLabel = new Label("The map will open in your default browser for a full-screen optimized experience.");
-        infoLabel.setStyle("-fx-text-fill: gray; -fx-font-style: italic;");
-        
-        Button googleTestBtn = new Button("DEBUG: Test Browser (Open Google)");
-        googleTestBtn.setOnAction(e -> {
-            System.out.println("[DEBUG] Test Browser button clicked");
-            try {
-                java.awt.Desktop.getDesktop().browse(new java.net.URI("https://www.google.com"));
-            } catch (Exception ex) {
-                System.err.println("[DEBUG] Browser Test Failed: " + ex.getMessage());
-                ex.printStackTrace();
-            }
-        });
-
-        VBox centerContent = new VBox(20, routeTable, center);
+        VBox content = new VBox(20);
+        content.getChildren().addAll(controls, new Separator(), routeTable);
         VBox.setVgrow(routeTable, Priority.ALWAYS);
-        panel.setCenter(centerContent);
-        center.getChildren().addAll(infoLabel, googleTestBtn);
 
         generateBtn.setOnAction(e -> {
             String selectedType = typeCombo.getValue();
@@ -721,17 +809,24 @@ public class AdminDashboard extends Application {
             
             new Thread(() -> {
                 List<Order> optimized = new RoutePlanner().optimizeSequence(orders, shopLat, shopLon);
+                
+                // Update UI Table (Must be on UI Thread)
                 Platform.runLater(() -> {
                     routeTable.getItems().setAll(optimized.stream()
                         .map(o -> new OrderRoute(optimized.indexOf(o)+1, o.getCustomerName(), o.getCustomerPhone(), o.getAddress()))
-                        .collect(Collectors.toList()));
-                    
-                    RouteMapLauncher.openRouteMapInBrowser(optimized, "Admin Dashboard", selectedType + " Batch: " + activeDate);
+                        .collect(java.util.stream.Collectors.toList()));
                 });
+                
+                // Launch Map (Heavy/Network - Keep on Background Thread)
+                RouteMapLauncher.openRouteMapInBrowser(optimized, "Admin Dashboard", selectedType + " Batch: " + activeDate);
             }).start();
         });
 
-        return panel;
+        mainContainer.getChildren().add(content);
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
     }
 
 

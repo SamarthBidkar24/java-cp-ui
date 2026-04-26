@@ -45,51 +45,75 @@ public class CustomerDashboard extends Application {
 
         BorderPane root = new BorderPane();
 
-        // 1. TOP area: Navigation Bar
-        HBox topNav = new HBox(25);
-        topNav.getStyleClass().add("customer-nav");
-        topNav.setPadding(new Insets(15, 30, 15, 30));
-        topNav.setAlignment(Pos.CENTER);
-
-        String[] navItems = { "Home", "Cart", "Orders", "Profile", "Logout" };
-
-        for (String name : navItems) {
-            Button navBtn = new Button(name);
-            navBtn.getStyleClass().add("nav-btn");
-            if (name.equals("Cart")) {
-                cartLabel = new Label("Cart (" + cartCount + ")");
-                navBtn.setGraphic(cartLabel);
-                navBtn.setText("");
-            }
-
-            navBtn.setOnAction(e -> {
-                if (name.equals("Logout")) {
-                    handleLogout();
-                } else {
-                    switchPanel(name);
-                }
-            });
-            topNav.getChildren().add(navBtn);
-        }
+        // 1. TOP area: Header
+        HBox header = new HBox();
+        header.getStyleClass().add("header-panel");
+        header.setAlignment(Pos.CENTER_LEFT);
+        
+        VBox titleBox = new VBox(2);
+        Label welcome = new Label("SuperMart Customer");
+        welcome.getStyleClass().add("header-title");
+        Label emailLabel = new Label("Logged in as: " + (customer != null ? customer.getEmail() : "Guest"));
+        emailLabel.getStyleClass().add("header-subtitle");
+        titleBox.getChildren().addAll(welcome, emailLabel);
         
         bellBtn = NotificationUI.createNotificationBell(Notification.UserType.CUSTOMER, customer.getEmail());
-        topNav.getChildren().addAll(new Region(), bellBtn);
-        HBox.setHgrow(topNav.getChildren().get(topNav.getChildren().size()-2), Priority.ALWAYS);
         
-        root.setTop(topNav);
+        header.getChildren().addAll(titleBox, new Region(), bellBtn);
+        HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+        
+        root.setTop(header);
         
         // Setup Live Notifications
         setupNotifications();
 
-        // 2. CENTER area: Content Area
+        // 2. LEFT area: Sidebar
+        VBox sidebar = new VBox(5);
+        sidebar.getStyleClass().add("sidebar");
+        sidebar.setPrefWidth(240);
+
+        Label navLabel = new Label("STORE NAVIGATION");
+        navLabel.setStyle("-fx-text-fill: #37B7C3; -fx-font-size: 11px; -fx-font-weight: bold; -fx-padding: 10 20 10 20;");
+        sidebar.getChildren().add(navLabel);
+
+        String[] navItems = { "Home", "Cart", "Orders", "Profile", "Logout" };
+
+        for (String name : navItems) {
+            Button btn = new Button(name);
+            btn.getStyleClass().add("sidebar-btn");
+            btn.setMaxWidth(Double.MAX_VALUE);
+            
+            if (name.equals("Cart")) {
+                cartLabel = new Label("(" + cartCount + ")");
+                cartLabel.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+                HBox cartBox = new HBox(5, new Label("Cart"), cartLabel);
+                cartBox.setAlignment(Pos.CENTER_LEFT);
+                btn.setGraphic(cartBox);
+                btn.setText("");
+            }
+
+            btn.setOnAction(e -> {
+                if (name.equals("Logout")) {
+                    handleLogout();
+                } else {
+                    switchPanel(name);
+                    sidebar.getChildren().forEach(node -> node.getStyleClass().remove("active"));
+                    btn.getStyleClass().add("active");
+                }
+            });
+            sidebar.getChildren().add(btn);
+        }
+        root.setLeft(sidebar);
+
+        // 3. CENTER area: Content Area
         contentArea = new StackPane();
-        contentArea.setPadding(new Insets(20));
         switchPanel("Home");
         root.setCenter(contentArea);
 
-        Scene scene = new Scene(root, 950, 750);
-        scene.getStylesheets().add(getClass().getResource("customer_dashboard.css").toExternalForm());
+        Scene scene = new Scene(root, 1200, 850);
+        scene.getStylesheets().add(getClass().getResource("style.css").toExternalForm());
         stage.setScene(scene);
+        stage.setMaximized(true);
         stage.show();
     }
 
@@ -126,33 +150,38 @@ public class CustomerDashboard extends Application {
     }
 
     // --- Customer Home Migration ---
-    private BorderPane createHomePanel() {
-        BorderPane panel = new BorderPane();
-        panel.setPadding(new Insets(10));
+    private ScrollPane createHomePanel() {
+        VBox mainContainer = new VBox(20);
+        mainContainer.setPadding(new Insets(30));
+        mainContainer.getStyleClass().add("card-panel");
+
+        Label titleLabel = new Label("Product Catalog");
+        titleLabel.getStyleClass().add("section-title");
+
         HBox topBar = new HBox(15);
         topBar.setAlignment(Pos.CENTER_LEFT);
-        topBar.setPadding(new Insets(0, 0, 15, 0));
+        topBar.setPadding(new Insets(0, 0, 10, 0));
 
         TextField searchField = new TextField();
-        searchField.setPromptText("Search products...");
-        searchField.setPrefWidth(300);
+        searchField.setPromptText("Search for groceries, electronics, etc...");
+        searchField.setPrefWidth(400);
 
-        Button clearBtn = new Button("Clear");
+        Button clearBtn = new Button("Clear Search");
+        clearBtn.getStyleClass().add("button-secondary");
         clearBtn.setOnAction(e -> searchField.clear());
-        topBar.getChildren().addAll(new Label("Search:"), searchField, clearBtn);
-        panel.setTop(topBar);
+        
+        topBar.getChildren().addAll(new Label("Quick Find:"), searchField, clearBtn);
+        mainContainer.getChildren().addAll(titleLabel, topBar);
 
         FlowPane grid = new FlowPane(20, 20);
-        grid.setPadding(new Insets(10));
         grid.setAlignment(Pos.TOP_LEFT);
-        ScrollPane scrollPane = new ScrollPane(grid);
-        scrollPane.setFitToWidth(true);
-        panel.setCenter(scrollPane);
+        
+        mainContainer.getChildren().add(grid);
+        VBox.setVgrow(grid, Priority.ALWAYS);
 
         ProductDAO dao = new ProductDAO();
         java.util.List<Product> allProducts = dao.getAllProducts();
 
-        // Requirements: Show only products with quantity > 0
         java.util.List<Product> inStockProducts = allProducts.stream()
                 .filter(p -> p.getQuantity() > 0)
                 .collect(java.util.stream.Collectors.toList());
@@ -165,7 +194,11 @@ public class CustomerDashboard extends Application {
                     .collect(java.util.stream.Collectors.toList());
             renderProducts(grid, filtered);
         });
-        return panel;
+
+        ScrollPane scrollPane = new ScrollPane(mainContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane");
+        return scrollPane;
     }
 
     private void renderProducts(FlowPane grid, java.util.List<Product> products) {
@@ -175,11 +208,12 @@ public class CustomerDashboard extends Application {
     }
 
     private VBox createProductCard(Product p) {
-        VBox card = new VBox(10);
-        card.getStyleClass().add("product-card");
-        card.setPadding(new Insets(15));
+        VBox card = new VBox(12);
+        card.getStyleClass().add("card-panel");
+        card.setPadding(new Insets(20));
         card.setAlignment(Pos.CENTER);
-        card.setPrefWidth(180);
+        card.setPrefWidth(220);
+        card.setMinWidth(220);
 
         javafx.scene.image.ImageView imgView = new javafx.scene.image.ImageView();
         imgView.setFitHeight(100);
@@ -192,13 +226,14 @@ public class CustomerDashboard extends Application {
         }
 
         Label nameLbl = new Label(p.getName());
-        nameLbl.setStyle("-fx-font-weight: bold;");
+        nameLbl.setStyle("-fx-font-weight: bold; -fx-font-size: 16px; -fx-text-fill: #071952;");
         Label priceLbl = new Label("₹" + p.getPrice());
-        Label stockLbl = new Label("Stock: " + p.getQuantity());
-        stockLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #718096;");
+        priceLbl.setStyle("-fx-font-size: 15px; -fx-text-fill: #088395; -fx-font-weight: bold;");
+        Label stockLbl = new Label("Available: " + p.getQuantity());
+        stockLbl.getStyleClass().add("header-subtitle");
 
         Button addBtn = new Button("Add to Cart");
-        addBtn.getStyleClass().add("add-cart-btn");
+        addBtn.setMaxWidth(Double.MAX_VALUE);
         addBtn.setOnAction(e -> {
             // Group by unique Product ID
             OrderItem existing = cartItems.stream()
@@ -382,22 +417,24 @@ public class CustomerDashboard extends Application {
         mapStatus.setWrapText(true);
 
         openMapBtn.setOnAction(e -> {
-            try {
-                LocationPickerServer server = new LocationPickerServer(res -> {
-                    Platform.runLater(() -> {
-                        validatedLat = res.lat;
-                        validatedLon = res.lon;
-                        validatedDisplayName = res.address;
-                        geocodeStatus = "SUCCESS";
-                        mapStatus.setText("✅ Confirmed: " + res.address);
-                        mapStatus.setStyle("-fx-text-fill: #38a169; -fx-font-weight: bold;");
+            new Thread(() -> {
+                try {
+                    LocationPickerServer.start(res -> {
+                        Platform.runLater(() -> {
+                            validatedLat = res.lat;
+                            validatedLon = res.lon;
+                            validatedDisplayName = res.address;
+                            geocodeStatus = "SUCCESS";
+                            mapStatus.setText("✅ Confirmed: " + res.address);
+                            mapStatus.setStyle("-fx-text-fill: #38a169; -fx-font-weight: bold;");
+                        });
                     });
-                });
-                server.start();
-                CustomerMapGenerator.openPicker();
-            } catch (Exception ex) {
-                new Alert(Alert.AlertType.ERROR, "Failed to start map server: " + ex.getMessage()).show();
-            }
+                    CustomerMapGenerator.openPicker();
+                } catch (Exception ex) {
+                    Platform.runLater(() -> 
+                        new Alert(Alert.AlertType.ERROR, "Failed to launch map: " + ex.getMessage()).show());
+                }
+            }).start();
         });
 
         // Reset logic: if any field changes, we might want to re-validate map point 
@@ -545,7 +582,7 @@ public class CustomerDashboard extends Application {
                 "  #map { cursor: crosshair; background: #f8f9fa; }" +
                 "</style></head><body>" +
                 "<div id='map'></div><script>" +
-                "var map = L.map('map', {zoomControl: true}).setView([18.5204, 73.8567], 12);" +
+                "var map = L.map('map', {zoomControl: true}).setView([" + Config.SHOP_LAT + ", " + Config.SHOP_LON + "], 12);" +
                 "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);" +
                 "var marker;" +
                 "function updatePick(lat, lng) {" +
@@ -814,6 +851,7 @@ public class CustomerDashboard extends Application {
             try {
                 start(new Stage());
             } catch (Exception e) {
+                e.printStackTrace();
             }
         });
     }

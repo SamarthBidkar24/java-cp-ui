@@ -22,63 +22,83 @@ public class SuperMartMain extends Application {
         primaryStage = stage;
         primaryStage.setTitle("SuperMart Online Ordering System");
 
-        BorderPane root = new BorderPane();
-        root.setPadding(new Insets(20));
+        StackPane root = new StackPane();
+        root.getStyleClass().add("auth-container");
+
+        VBox authCard = new VBox(20);
+        authCard.getStyleClass().add("auth-card");
+        authCard.setMaxSize(450, 550);
+        authCard.setAlignment(Pos.TOP_CENTER);
 
         // Title
-        Label titleLabel = new Label("SuperMart Online Ordering");
-        titleLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-padding: 10 0 20 0;");
-        HBox titleBox = new HBox(titleLabel);
-        titleBox.setAlignment(Pos.CENTER);
-        root.setTop(titleBox);
+        Label titleLabel = new Label("SuperMart");
+        titleLabel.getStyleClass().add("auth-title");
+        Label subtitleLabel = new Label("Secure Authentication");
+        subtitleLabel.setStyle("-fx-text-fill: #718096; -fx-font-size: 14px;");
+        
+        VBox titleArea = new VBox(5, titleLabel, subtitleLabel);
+        titleArea.setAlignment(Pos.CENTER);
+        titleArea.setPadding(new Insets(0, 0, 20, 0));
 
         // TabPane
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("auth-tabs");
 
-        Tab loginTab = new Tab("Login", createLoginPanel());
-        Tab registerTab = new Tab("Register", createRegisterPanel());
+        Tab loginTab = new Tab("Sign In", createLoginPanel());
+        Tab registerTab = new Tab("Sign Up", createRegisterPanel());
 
         tabPane.getTabs().addAll(loginTab, registerTab);
-        root.setCenter(tabPane);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
 
-        Scene scene = new Scene(root, 600, 500);
-        // Load professional CSS
-        scene.getStylesheets().add(getClass().getResource("auth.css").toExternalForm());
+        authCard.getChildren().addAll(titleArea, tabPane);
+        root.getChildren().add(authCard);
+
+        Scene scene = new Scene(root, 900, 700);
+        scene.getStylesheets().add(getClass().getResource("style.css").toExternalForm());
         
         primaryStage.setScene(scene);
+        primaryStage.setMaximized(true);
         primaryStage.show();
     }
 
     private VBox createLoginPanel() {
-        VBox panel = new VBox(20);
+        VBox panel = new VBox(25);
         panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(30));
+        panel.setPadding(new Insets(30, 0, 0, 0));
 
         GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
+        grid.setHgap(15);
+        grid.setVgap(15);
         grid.setAlignment(Pos.CENTER);
 
         TextField emailField = new TextField();
-        emailField.setPromptText("Email");
-        emailField.setPrefWidth(250);
+        emailField.setPromptText("Enter your email");
+        emailField.setPrefWidth(300);
 
         PasswordField pwdField = new PasswordField();
-        pwdField.setPromptText("Password");
+        pwdField.setPromptText("Enter your password");
 
-        grid.add(new Label("Email:"), 0, 0);
-        grid.add(emailField, 1, 0);
-        grid.add(new Label("Password:"), 0, 1);
-        grid.add(pwdField, 1, 1);
+        grid.add(new Label("Email"), 0, 0);
+        grid.add(emailField, 0, 1);
+        grid.add(new Label("Password"), 0, 2);
+        grid.add(pwdField, 0, 3);
 
-        HBox btnBox = new HBox(15);
+        VBox btnBox = new VBox(10);
         btnBox.setAlignment(Pos.CENTER);
-        Button adminBtn = new Button("Admin Login");
-        Button customerBtn = new Button("Customer Login");
-        Button deliveryBtn = new Button("Delivery Login");
         
-        btnBox.getChildren().addAll(adminBtn, customerBtn, deliveryBtn);
+        Button customerBtn = new Button("Sign In as Customer");
+        customerBtn.setMaxWidth(300);
+        
+        HBox otherBtns = new HBox(10);
+        otherBtns.setAlignment(Pos.CENTER);
+        Button adminBtn = new Button("Admin");
+        adminBtn.getStyleClass().add("button-secondary");
+        Button deliveryBtn = new Button("Delivery");
+        deliveryBtn.getStyleClass().add("button-secondary");
+        otherBtns.getChildren().addAll(adminBtn, deliveryBtn);
+        
+        btnBox.getChildren().addAll(customerBtn, new Label("or login as"), otherBtns);
 
         panel.getChildren().addAll(grid, btnBox);
 
@@ -91,9 +111,9 @@ public class SuperMartMain extends Application {
     }
 
     private ScrollPane createRegisterPanel() {
-        VBox panel = new VBox(15);
-        panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(30));
+        VBox panel = new VBox(20);
+        panel.setAlignment(Pos.TOP_CENTER);
+        panel.setPadding(new Insets(25, 20, 25, 20));
 
         GridPane grid = new GridPane();
         grid.setHgap(10);
@@ -101,19 +121,24 @@ public class SuperMartMain extends Application {
         grid.setAlignment(Pos.CENTER);
 
         TextField nameField = new TextField();
+        nameField.setPromptText("Full Name");
         TextField emailField = new TextField();
+        emailField.setPromptText("Email Address");
         TextField phoneField = new TextField();
+        phoneField.setPromptText("Phone Number");
         PasswordField pwdField = new PasswordField();
+        pwdField.setPromptText("Password");
         PasswordField confirmField = new PasswordField();
-        grid.add(new Label("Full Name:"), 0, 0); grid.add(nameField, 1, 0);
-        grid.add(new Label("Email:"), 0, 1); grid.add(emailField, 1, 1);
-        grid.add(new Label("Phone:"), 0, 2); grid.add(phoneField, 1, 2);
-        grid.add(new Label("Password:"), 0, 3); grid.add(pwdField, 1, 3);
-        grid.add(new Label("Confirm Password:"), 0, 4); grid.add(confirmField, 1, 4);
+        confirmField.setPromptText("Confirm Password");
 
-        Button registerBtn = new Button("Register as Customer");
-        registerBtn.setPrefWidth(200);
-        
+        grid.add(new Label("Name"), 0, 0); grid.add(nameField, 1, 0);
+        grid.add(new Label("Email"), 0, 1); grid.add(emailField, 1, 1);
+        grid.add(new Label("Phone"), 0, 2); grid.add(phoneField, 1, 2);
+        grid.add(new Label("Password"), 0, 3); grid.add(pwdField, 1, 3);
+        grid.add(new Label("Confirm"), 0, 4); grid.add(confirmField, 1, 4);
+
+        Button registerBtn = new Button("Create Customer Account");
+        registerBtn.setMaxWidth(Double.MAX_VALUE);
         
         panel.getChildren().addAll(grid, registerBtn);
 
