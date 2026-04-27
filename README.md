@@ -33,12 +33,12 @@ Compile and run the application using the following commands:
 
 **Compilation:**
 ```sh
-javac --module-path "C:\Users\acer\Downloads\openjfx-26_windows-x64_bin-sdk\javafx-sdk-26\lib" --add-modules javafx.controls,javafx.fxml,javafx.web -cp ".;mysql-connector-j-9.6.0.jar" *.java
+javac --module-path "C:\Users\acer\Downloads\openjfx-26_windows-x64_bin-sdk\javafx-sdk-26\lib" --add-modules javafx.controls,javafx.fxml,javafx.web -cp "src;mysql-connector-j-9.6.0.jar" src/*.java
 ```
 
 **Execution:**
 ```sh
-java --module-path "C:\Users\acer\Downloads\openjfx-26_windows-x64_bin-sdk\javafx-sdk-26\lib" --add-modules javafx.controls,javafx.fxml,javafx.web -cp ".;mysql-connector-j-9.6.0.jar" SuperMartMain
+java --module-path "C:\Users\acer\Downloads\openjfx-26_windows-x64_bin-sdk\javafx-sdk-26\lib" --add-modules javafx.controls,javafx.fxml,javafx.web -cp "src;mysql-connector-j-9.6.0.jar" SuperMartMain
 ```
 
 
