@@ -898,10 +898,10 @@ public class AdminDashboard extends Application {
         colProd.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getProduct().getName()));
         
         TableColumn<OrderItem, Integer> colQty = new TableColumn<>("Qty");
-        colQty.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("qty"));
+        colQty.setCellValueFactory(data -> new javafx.beans.property.SimpleIntegerProperty(data.getValue().getQty()).asObject());
         
         TableColumn<OrderItem, Double> colPrice = new TableColumn<>("Unit Price");
-        colPrice.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("priceAtOrder"));
+        colPrice.setCellValueFactory(data -> new javafx.beans.property.SimpleDoubleProperty(data.getValue().getPriceAtOrder()).asObject());
         
         TableColumn<OrderItem, Double> colTotal = new TableColumn<>("Line Total");
         colTotal.setCellValueFactory(data -> new javafx.beans.property.SimpleDoubleProperty(data.getValue().getQty() * data.getValue().getPriceAtOrder()).asObject());
@@ -1077,16 +1077,34 @@ public class AdminDashboard extends Application {
         grid.add(new Label("Vehicle:"), 0, 5); grid.add(vehicleIn, 1, 5);
 
         dialog.getDialogPane().setContent(grid);
-        dialog.setResultConverter(btn -> {
-            if (btn == saveButton) {
-                DeliveryDAO dao = new DeliveryDAO();
-                if (dao.registerAgent(nameIn.getText(), emailIn.getText(), phoneIn.getText(), pwdIn.getText(), vehicleIn.getValue(), areaIn.getText(), "APPROVED")) {
-                    table.setItems(javafx.collections.FXCollections.observableArrayList(dao.getAllAgents()));
-                }
+
+        java.util.Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isPresent() && result.get().getButtonData() == ButtonBar.ButtonData.OK_DONE) {
+            String name = nameIn.getText().trim();
+            String email = emailIn.getText().trim();
+            String phone = phoneIn.getText().trim();
+            String pwd = pwdIn.getText().trim();
+            String area = areaIn.getText().trim();
+            String vehicle = vehicleIn.getValue();
+
+            if (name.isEmpty() || email.isEmpty() || phone.isEmpty() || pwd.isEmpty() || area.isEmpty()) {
+                new Alert(Alert.AlertType.ERROR, "Validation Error: All fields are required.").show();
+                return;
             }
-            return null;
-        });
-        dialog.showAndWait();
+
+            DeliveryDAO dao = new DeliveryDAO();
+            if (dao.emailExists(email)) {
+                new Alert(Alert.AlertType.ERROR, "Validation Error: Email already exists.").show();
+                return;
+            }
+
+            if (dao.registerAgent(name, email, phone, pwd, vehicle, area, "APPROVED")) {
+                new Alert(Alert.AlertType.INFORMATION, "Success: Delivery Agent registered successfully.").show();
+                table.setItems(javafx.collections.FXCollections.observableArrayList(dao.getAllAgents()));
+            } else {
+                new Alert(Alert.AlertType.ERROR, "Error: Failed to register agent in database.").show();
+            }
+        }
     }
 
     public void startApp() {

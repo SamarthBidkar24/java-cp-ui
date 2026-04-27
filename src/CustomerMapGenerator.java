@@ -7,7 +7,7 @@ import java.nio.file.Files;
  */
 public class CustomerMapGenerator {
 
-    public static void openPicker() {
+    public static void openPicker(int serverPort) {
         try {
             File tempFile = Files.createTempFile("supermart_picker_", ".html").toFile();
             tempFile.deleteOnExit();
@@ -60,7 +60,7 @@ public class CustomerMapGenerator {
                 "});" +
 
                 "function confirmLocation() {" +
-                "  var url = 'http://localhost:8080/confirm?lat=' + selectedLat + '&lon=' + selectedLon + '&addr=' + encodeURIComponent(selectedAddr);" +
+                "  var url = 'http://localhost:" + serverPort + "/confirm?lat=' + selectedLat + '&lon=' + selectedLon + '&addr=' + encodeURIComponent(selectedAddr);" +
                 "  window.location.href = url;" +
                 "}" +
                 "</script></body></html>";

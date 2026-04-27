@@ -412,8 +412,14 @@ public class CustomerDashboard extends Application {
         openMapBtn.setMaxWidth(Double.MAX_VALUE);
         openMapBtn.setStyle("-fx-background-color: #edf2f7; -fx-border-color: #cbd5e0; -fx-cursor: hand;");
 
-        Label mapStatus = new Label("No point selected on map");
-        mapStatus.setStyle("-fx-text-fill: #a0aec0; -fx-font-style: italic;");
+        Label mapStatus = new Label();
+        if ("SUCCESS".equals(geocodeStatus)) {
+            mapStatus.setText("✅ Confirmed: " + validatedDisplayName);
+            mapStatus.setStyle("-fx-text-fill: #38a169; -fx-font-weight: bold;");
+        } else {
+            mapStatus.setText("No point selected on map");
+            mapStatus.setStyle("-fx-text-fill: #a0aec0; -fx-font-style: italic;");
+        }
         mapStatus.setWrapText(true);
 
         openMapBtn.setOnAction(e -> {
@@ -429,7 +435,7 @@ public class CustomerDashboard extends Application {
                             mapStatus.setStyle("-fx-text-fill: #38a169; -fx-font-weight: bold;");
                         });
                     });
-                    CustomerMapGenerator.openPicker();
+                    CustomerMapGenerator.openPicker(LocationPickerServer.getPort());
                 } catch (Exception ex) {
                     Platform.runLater(() -> 
                         new Alert(Alert.AlertType.ERROR, "Failed to launch map: " + ex.getMessage()).show());
@@ -476,7 +482,7 @@ public class CustomerDashboard extends Application {
             
             // NEW: Validate Payment
             if (!isPaymentConfirmed) {
-                new Alert(Alert.AlertType.WARNING, "Please complete the UPI payment and click 'I Have Paid' before placing the order.").show();
+                new Alert(Alert.AlertType.WARNING, "Please complete the UPI payment by clicking 'Pay Now' and confirming success before placing the order.").show();
                 return;
             }
 
@@ -542,33 +548,56 @@ public class CustomerDashboard extends Application {
         box.setStyle("-fx-background-color: #f7fafc; -fx-border-color: #e2e8f0; -fx-border-radius: 8;");
         box.setAlignment(Pos.CENTER);
 
-        Label title = new Label("UPI Payment (ONLY)");
-        title.setStyle("-fx-font-weight: bold; -fx-text-fill: #2d3748;");
-
-        Label merchant = new Label(Config.MERCHANT_NAME);
-        merchant.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #3182ce;");
-
-        Label upiId = new Label(Config.MERCHANT_UPI_ID);
-        upiId.setStyle("-fx-font-family: 'Consolas'; -fx-text-fill: #4a5568;");
-
-        qrView.setFitWidth(140);
-        qrView.setFitHeight(140);
-        
         upiStatusLabel = new Label("🕒 Waiting for Payment...");
         upiStatusLabel.setStyle("-fx-text-fill: #718096; -fx-font-style: italic;");
 
-        Button confirmPayBtn = new Button("I Have Paid");
-        confirmPayBtn.setMaxWidth(Double.MAX_VALUE);
-        confirmPayBtn.setStyle("-fx-background-color: #48bb78; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
-        
-        confirmPayBtn.setOnAction(e -> {
-            isPaymentConfirmed = true;
-            upiStatusLabel.setText("✅ Payment Confirmed");
-            upiStatusLabel.setStyle("-fx-text-fill: #2f855a; -fx-font-weight: bold;");
-            new Alert(Alert.AlertType.INFORMATION, "Payment simulation successful! You can now place the order.").show();
+        Button payBtn = new Button("Pay Now");
+        payBtn.setMaxWidth(Double.MAX_VALUE);
+        payBtn.setStyle("-fx-background-color: #3182ce; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14px; -fx-cursor: hand;");
+
+        payBtn.setOnAction(e -> {
+            Stage popupStage = new Stage();
+            popupStage.initOwner(stage);
+            popupStage.setTitle("UPI Payment QR");
+
+            VBox popupBox = new VBox(15);
+            popupBox.setPadding(new Insets(20));
+            popupBox.setAlignment(Pos.CENTER);
+            popupBox.setStyle("-fx-background-color: white;");
+
+            Label popTitle = new Label("Scan QR to Pay");
+            popTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 16px; -fx-text-fill: #2d3748;");
+
+            Label popMerchant = new Label(Config.MERCHANT_NAME);
+            popMerchant.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #3182ce;");
+
+            Label popUpiId = new Label(Config.MERCHANT_UPI_ID);
+            popUpiId.setStyle("-fx-font-family: 'Consolas'; -fx-text-fill: #4a5568;");
+
+            javafx.scene.image.ImageView popupQrView = new javafx.scene.image.ImageView(qrView.getImage());
+            popupQrView.setFitWidth(180);
+            popupQrView.setFitHeight(180);
+
+            Button successBtn = new Button("Payment Successful");
+            successBtn.setMaxWidth(Double.MAX_VALUE);
+            successBtn.setStyle("-fx-background-color: #48bb78; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+            
+            successBtn.setOnAction(ev -> {
+                isPaymentConfirmed = true;
+                upiStatusLabel.setText("✅ Paid");
+                upiStatusLabel.setStyle("-fx-text-fill: #2f855a; -fx-font-weight: bold;");
+                popupStage.close();
+                new Alert(Alert.AlertType.INFORMATION, "Payment simulation successful! You can now place the order.").show();
+            });
+
+            popupBox.getChildren().addAll(popTitle, popMerchant, popUpiId, popupQrView, successBtn);
+            
+            Scene popupScene = new Scene(popupBox, 300, 380);
+            popupStage.setScene(popupScene);
+            popupStage.show();
         });
 
-        box.getChildren().addAll(title, merchant, upiId, qrView, upiStatusLabel, confirmPayBtn);
+        box.getChildren().addAll(upiStatusLabel, payBtn);
         updateUpiPanel(total);
         return box;
     }

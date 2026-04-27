@@ -23,7 +23,7 @@ public class LocationPickerServer {
 
     private LocationPickerServer() {
         try {
-            server = HttpServer.create(new InetSocketAddress(8080), 0);
+            server = HttpServer.create(new InetSocketAddress(0), 0);
             server.createContext("/confirm", new HttpHandler() {
                 @Override
                 public void handle(HttpExchange exchange) throws IOException {
@@ -69,6 +69,10 @@ public class LocationPickerServer {
             instance = new LocationPickerServer();
         }
         instance.currentCallback = onResult;
+    }
+
+    public static int getPort() {
+        return (instance != null && instance.server != null) ? instance.server.getAddress().getPort() : 8080;
     }
 
     public static synchronized void stop() {

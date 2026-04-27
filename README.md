@@ -29,14 +29,18 @@ The backend drops slow, isolated databases in favor of lightning-fast **Static I
 ## How To Run
 
 #### 1. Via Standard CLI 
-You can run this via your baseline terminal tools globally without IDE support if configured. Simply navigate inside the project folder:
-```sh
-# Compile all structures
-javac *.java
+Compile and run the application using the following commands:
 
-# Boot the Application 
-java SuperMartMain
+**Compilation:**
+```sh
+javac --module-path "C:\Users\acer\Downloads\openjfx-26_windows-x64_bin-sdk\javafx-sdk-26\lib" --add-modules javafx.controls,javafx.fxml,javafx.web -cp ".;mysql-connector-j-9.6.0.jar" *.java
 ```
+
+**Execution:**
+```sh
+java --module-path "C:\Users\acer\Downloads\openjfx-26_windows-x64_bin-sdk\javafx-sdk-26\lib" --add-modules javafx.controls,javafx.fxml,javafx.web -cp ".;mysql-connector-j-9.6.0.jar" SuperMartMain
+```
+
 
 #### 2. Intellij IDEA / Eclipse
 * Copy all the `.java` files from this repo directly into your IDE's `src` folder. 

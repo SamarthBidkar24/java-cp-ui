@@ -419,7 +419,7 @@ public class OrderDAO {
         System.out.println("[DEBUG_DAO] Fetching items for Order ID: " + orderId);
         List<OrderItem> items = new ArrayList<>();
         // Simplify: Search directly in order_items using the alphanumeric order_id
-        String query = "SELECT p.*, oi.quantity, oi.price_at_order FROM order_items oi " +
+        String query = "SELECT p.*, oi.quantity AS item_qty, oi.price_at_order FROM order_items oi " +
                        "JOIN products p ON oi.product_id = p.id " +
                        "WHERE oi.order_id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -436,7 +436,7 @@ public class OrderDAO {
                     p.setCategory(rs.getString("category"));
                     
                     double priceAtOrder = rs.getDouble("price_at_order");
-                    int qty = rs.getInt("quantity");
+                    int qty = rs.getInt("item_qty");
                     
                     if (count == 1) {
                         System.out.println("[DEBUG_DAO] First item found: " + p.getName() + ", Qty: " + qty);
