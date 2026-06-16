@@ -7,10 +7,10 @@ import java.sql.SQLException;
  */
 public class DBConnection {
     // Database connection details
-    private static final String URL = "jdbc:mysql://localhost:3306/supermart_oop";
+    private static final String URL = "URL";
     private static final String USER = "root";
-    private static final String PASSWORD = "S@m242005"; // Your MySQL password
-    private static final String DRIVER = "com.mysql.cj.jdbc.Driver";
+    private static final String PASSWORD = "PASSWORD"; // Your MySQL password
+    private static final String DRIVER = "JAR FILE PATH";
 
     /**
      * Establishes and returns a connection to the MySQL database.
